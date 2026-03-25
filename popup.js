@@ -32,7 +32,7 @@ let UI = {
     no_headings: "Šajā lapā nav neviena virsraksta (h1–h6).",
     history_empty: "Nav pārbaužu.",
   },
-  dashboard_url: "https://wcagpilot.com/app",
+  dashboard_url: "https://wcagpilot-web.pages.dev/app",
   // HTML template for profile section (loaded from server)
   profile_html: null,
 };
