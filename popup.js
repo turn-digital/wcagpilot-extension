@@ -437,9 +437,10 @@ async function handleHistory() {
 // Login buttons
 // ============================================================
 
-// Email login - opens the app login page
+// Email login - opens the app login page with email form
 $("email-login-btn").addEventListener("click", () => {
-  chrome.tabs.create({ url: UI.dashboard_url });
+  const url = UI.dashboard_url + (UI.dashboard_url.includes("?") ? "&" : "?") + "login=email";
+  chrome.tabs.create({ url });
 });
 
 $("google-btn").addEventListener("click", async () => {
