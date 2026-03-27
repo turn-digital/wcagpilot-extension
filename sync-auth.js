@@ -56,29 +56,48 @@
     }
   }
 
-  // Sync FROM extension TO app (if app has no auth)
+  // Sync FROM extension TO app
   function syncAuthFromExtension() {
     try {
       // Check if app already has auth
       const stored = localStorage.getItem("auth");
+      let appHasAuth = false;
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          if (parsed.token) return; // App already has auth
+          if (parsed.token) appHasAuth = true;
         } catch {}
       }
 
-      // Ask extension for auth
+      // Always ask extension for auth status
       chrome.runtime.sendMessage({ action: "getAuth" }, (response) => {
         if (chrome.runtime.lastError) return;
 
         if (response?.auth?.token) {
-          console.log("[WCAGpilot] Auth received from extension");
-          syncedFromExtension = true;
-          appHadAuth = true;
-          localStorage.setItem("auth", JSON.stringify(response.auth));
-          // Notify React app
-          window.dispatchEvent(new CustomEvent("wcagpilot:auth-from-extension"));
+          // Extension has auth
+          if (!appHasAuth) {
+            // App doesn't have auth, sync from extension
+            console.log("[WCAGpilot] Auth received from extension");
+            syncedFromExtension = true;
+            appHadAuth = true;
+            localStorage.setItem("auth", JSON.stringify(response.auth));
+            // Notify React app
+            window.dispatchEvent(new CustomEvent("wcagpilot:auth-from-extension"));
+          } else {
+            // Both have auth - safe to sync app→extension (keeps them in sync)
+            syncAuthToExtension();
+          }
+        } else {
+          // Extension has NO auth
+          if (appHasAuth) {
+            // App has auth but extension doesn't - user logged out in extension
+            console.log("[WCAGpilot] Extension logged out, clearing app auth");
+            syncedFromExtension = true;
+            appHadAuth = false;
+            localStorage.removeItem("auth");
+            // Notify React app
+            window.dispatchEvent(new CustomEvent("wcagpilot:logout-from-extension"));
+          }
         }
       });
     } catch (err) {
@@ -108,8 +127,9 @@
     } catch {}
   }
 
-  // On page load: sync both directions
-  syncAuthToExtension();
+  // On page load: check extension status FIRST, then sync if needed
+  // We must check extension before syncing app→extension, otherwise
+  // we'd re-login the extension if user logged out while app was closed
   syncAuthFromExtension();
 
   // Listen for storage changes
