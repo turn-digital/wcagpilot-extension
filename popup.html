@@ -1,105 +1,320 @@
 <!DOCTYPE html>
-<html lang="lv">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=400">
-  <title>A11y Headings Checker</title>
+  <meta name="viewport" content="width=360">
+  <title>WCAGpilot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
+
   <!-- 1. LOGIN -->
   <section id="login-section" class="section">
-    <h1>A11y Headings Checker</h1>
-    <p class="subtitle">Pārbaudi virsrakstu piekļūstamību (WCAG 2.4.6)</p>
+    <div class="login-content">
+      <!-- Logo + Wordmark -->
+      <div class="logo-row">
+        <svg class="logo" width="40" height="40" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
+          <rect x="12" y="14" width="40" height="8" rx="4" fill="#1A1A2E"/>
+          <rect x="12" y="28" width="32" height="8" rx="4" fill="#636B74"/>
+          <rect x="12" y="42" width="24" height="8" rx="4" fill="#2D7A0E"/>
+        </svg>
+        <span class="wordmark"><span class="wordmark-wcag">WCAG</span><span class="wordmark-pilot">pilot</span></span>
+      </div>
 
-    <div class="auth-buttons">
-      <button id="google-btn" class="btn btn-google">
-        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-        Sign in with Google
-      </button>
-      <button id="email-login-btn" class="btn btn-secondary">
-        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
-        Sign in with Email
-      </button>
+      <!-- Subtitle -->
+      <p class="login-subtitle">Check if your headings meet WCAG and learn how to improve them</p>
+
+      <!-- Auth buttons -->
+      <div class="auth-buttons">
+        <button id="google-btn" class="btn btn-google" type="button">
+          <svg class="btn-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M17.64 10.2c0-.63-.06-1.25-.16-1.84H10v3.48h4.3a3.68 3.68 0 0 1-1.6 2.41v2h2.58c1.51-1.39 2.38-3.44 2.38-6.05z" fill="#4285F4"/>
+            <path d="M10 18c2.16 0 3.97-.72 5.3-1.94l-2.58-2a5.07 5.07 0 0 1-2.72.77 5.05 5.05 0 0 1-4.74-3.49H2.58v2.07A8 8 0 0 0 10 18z" fill="#34A853"/>
+            <path d="M5.26 11.34a4.8 4.8 0 0 1 0-3.07V6.2H2.58a8 8 0 0 0 0 7.18l2.68-2.04z" fill="#FBBC05"/>
+            <path d="M10 4.98a4.33 4.33 0 0 1 3.07 1.2l2.3-2.3A7.7 7.7 0 0 0 10 2a8 8 0 0 0-7.42 4.97l2.68 2.07A4.77 4.77 0 0 1 10 4.98z" fill="#EA4335"/>
+          </svg>
+          Sign in with Google
+        </button>
+        <button id="email-login-btn" class="btn btn-outline" type="button">
+          <svg class="btn-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="2" y="4" width="16" height="12" rx="2" stroke="#1A1A2E" stroke-width="1.5" fill="none"/>
+            <polyline points="2,4 10,11 18,4" stroke="#1A1A2E" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Sign in with email
+        </button>
+      </div>
+
+      <!-- Footer -->
+      <p class="login-footer">Free &middot; 20 checks/month</p>
     </div>
   </section>
 
-  <!-- 2. PROFILE / READY -->
-  <section id="profile-section" class="section hidden">
-    <div class="profile-header">
-      <img id="profile-picture" class="avatar" alt="" src="">
-      <div class="profile-info">
-        <strong id="profile-name"></strong>
-        <span id="profile-email" class="email"></span>
+  <!-- 2. ONBOARDING -->
+  <section id="onboard-section" class="section hidden">
+    <div class="onboard-content">
+      <!-- Slide 1 -->
+      <div class="onboard-slide" data-slide="1">
+        <div class="onboard-icon-wrap">
+          <div class="onboard-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2D7A0E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </div>
+        </div>
+        <p class="onboard-step">Step 1 of 3</p>
+        <p class="onboard-title">Open the page you want to check</p>
       </div>
-      <button id="logout-btn" class="btn-icon" title="Iziet">
-        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
-      </button>
-    </div>
-    <div class="limits-bar">
-      <span id="limits-text">Pārbaudes: 0/20 izmantotas</span>
-      <div class="progress">
-        <div id="limits-progress" class="progress-fill"></div>
+
+      <!-- Slide 2 -->
+      <div class="onboard-slide hidden" data-slide="2">
+        <div class="onboard-icon-wrap">
+          <div class="onboard-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2D7A0E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+        </div>
+        <p class="onboard-step">Step 2 of 3</p>
+        <p class="onboard-title">Get a clear answer — does it meet WCAG?</p>
       </div>
-    </div>
-    <div class="actions">
-      <button id="check-btn" class="btn btn-primary">Pārbaudīt šo lapu</button>
-      <button id="history-btn" class="btn btn-secondary">Vēsture</button>
-      <button id="dashboard-btn" class="btn btn-dashboard">Atvērt paneli</button>
+
+      <!-- Slide 3 -->
+      <div class="onboard-slide hidden" data-slide="3">
+        <div class="onboard-icon-wrap">
+          <div class="onboard-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2D7A0E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </div>
+        </div>
+        <p class="onboard-step">Step 3 of 3</p>
+        <p class="onboard-title">Send the results to your developer</p>
+      </div>
+
+      <!-- Dot indicator -->
+      <div class="dot-row">
+        <div class="dot active" data-dot="1"></div>
+        <div class="dot" data-dot="2"></div>
+        <div class="dot" data-dot="3"></div>
+      </div>
+
+      <!-- Next / Get started button -->
+      <button id="onboard-next-btn" class="btn btn-primary" type="button">Next</button>
+
+      <!-- Skip link -->
+      <p class="onboard-skip"><a href="#" id="onboard-skip-btn" class="text-link">Skip</a></p>
     </div>
   </section>
 
-  <!-- 3. LOADING -->
+  <!-- 3. HOME -->
+  <section id="home-section" class="section hidden">
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
+          <rect x="12" y="14" width="40" height="8" rx="4" fill="#1A1A2E"/>
+          <rect x="12" y="28" width="32" height="8" rx="4" fill="#636B74"/>
+          <rect x="12" y="42" width="24" height="8" rx="4" fill="#2D7A0E"/>
+        </svg>
+        <span class="wordmark wordmark-sm"><span class="wordmark-wcag">WCAG</span><span class="wordmark-pilot">pilot</span></span>
+      </div>
+      <button id="profile-btn" class="profile-circle" aria-label="User profile" title="Account">
+        <span id="profile-initial">?</span>
+      </button>
+    </div>
+
+    <div class="home-content">
+      <!-- Active page context -->
+      <p class="overline">Current page</p>
+      <p id="current-url" class="current-url">Loading...</p>
+
+      <!-- Primary button -->
+      <button id="check-btn" class="btn btn-primary" type="button">Check this page</button>
+
+      <!-- Progress bar -->
+      <div class="progress-wrapper">
+        <div class="progress-row">
+          <span id="limits-text" class="progress-label">0 / 20 checks</span>
+          <a href="#" id="get-more-link" class="progress-link">Get more</a>
+        </div>
+        <div class="progress-track">
+          <div id="limits-progress" class="progress-fill"></div>
+        </div>
+      </div>
+
+      <!-- History link -->
+      <p class="history-link-wrap"><a href="#" id="history-link" class="text-link">View history</a></p>
+
+      <!-- Teaser -->
+      <div class="teaser">
+        <svg width="16" height="16" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
+          <rect x="12" y="14" width="40" height="8" rx="4" fill="#1A1A2E"/>
+          <rect x="12" y="28" width="32" height="8" rx="4" fill="#636B74"/>
+          <rect x="12" y="42" width="24" height="8" rx="4" fill="#2D7A0E"/>
+        </svg>
+        <span>Full WCAG audit — Coming soon</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. LOADING -->
   <section id="loading-section" class="section hidden">
-    <div class="spinner"></div>
-    <p id="loading-text">Analizē virsrakstus...</p>
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
+          <rect x="12" y="14" width="40" height="8" rx="4" fill="#1A1A2E"/>
+          <rect x="12" y="28" width="32" height="8" rx="4" fill="#636B74"/>
+          <rect x="12" y="42" width="24" height="8" rx="4" fill="#2D7A0E"/>
+        </svg>
+        <span class="wordmark wordmark-sm"><span class="wordmark-wcag">WCAG</span><span class="wordmark-pilot">pilot</span></span>
+      </div>
+      <div id="loading-profile" class="profile-circle">
+        <span id="loading-profile-initial">?</span>
+      </div>
+    </div>
+
+    <div class="loading-content">
+      <div class="spinner" role="status" aria-label="Analyzing"></div>
+      <p class="loading-title" id="loading-text">Analyzing heading structure...</p>
+      <p class="loading-hint">Usually takes 10–30 seconds</p>
+    </div>
   </section>
 
-  <!-- 4. RESULT -->
+  <!-- 5. RESULT -->
   <section id="result-section" class="section hidden">
-    <div id="compliance-badge" class="compliance-badge"></div>
-    <div id="checks-list" class="checks-list"></div>
-    <div id="outline-comparison" class="outline-comparison hidden">
-      <div class="outline-col">
-        <div class="outline-label">Pašreizējā struktūra</div>
-        <pre id="current-outline" class="outline-pre"></pre>
-      </div>
-      <div class="outline-col">
-        <div class="outline-label">Ieteicamā struktūra</div>
-        <pre id="suggested-outline" class="outline-pre"></pre>
-      </div>
-    </div>
-    <div id="result-summary" class="summary"></div>
-    <div class="actions">
-      <button id="recheck-btn" class="btn btn-secondary">Pārbaudīt vēlreiz</button>
-      <button id="copy-btn" class="btn btn-secondary">Kopēt rezultātu</button>
-    </div>
-  </section>
-
-  <!-- 5. HISTORY -->
-  <section id="history-section" class="section hidden">
-    <div class="section-header">
-      <h2>Pārbaužu vēsture</h2>
-      <button id="history-back-btn" class="btn-icon" title="Atpakaļ">
-        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+    <!-- Topbar with back -->
+    <div class="topbar">
+      <button id="result-back-btn" class="back-link" aria-label="Back">
+        <span aria-hidden="true">←</span> Back
       </button>
+      <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
+        <rect x="12" y="14" width="40" height="8" rx="4" fill="#1A1A2E"/>
+        <rect x="12" y="28" width="32" height="8" rx="4" fill="#636B74"/>
+        <rect x="12" y="42" width="24" height="8" rx="4" fill="#2D7A0E"/>
+      </svg>
     </div>
-    <div id="history-list" class="history-list"></div>
+
+    <div class="result-content">
+      <!-- Checked page -->
+      <p class="overline">Checked page</p>
+      <p id="result-url" class="current-url"></p>
+
+      <!-- Verdict box -->
+      <div id="verdict-box" class="verdict-box verdict-fail">
+        <p id="verdict-title" class="verdict-title">✗ Failed</p>
+        <p id="verdict-summary" class="verdict-summary"></p>
+      </div>
+
+      <!-- Check items -->
+      <div id="checks-list" class="checks-list"></div>
+
+      <!-- Actions -->
+      <div class="result-actions">
+        <button id="details-btn" class="btn btn-primary" type="button">See how to fix it</button>
+        <button id="recheck-btn" class="btn btn-outline" type="button">Check another page</button>
+      </div>
+    </div>
   </section>
 
-  <!-- 6. LIMIT REACHED -->
+  <!-- 6. HISTORY -->
+  <section id="history-section" class="section hidden">
+    <!-- Topbar with back -->
+    <div class="topbar">
+      <button id="history-back-btn" class="back-link" aria-label="Back">
+        <span aria-hidden="true">←</span> Back
+      </button>
+      <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
+        <rect x="12" y="14" width="40" height="8" rx="4" fill="#1A1A2E"/>
+        <rect x="12" y="28" width="32" height="8" rx="4" fill="#636B74"/>
+        <rect x="12" y="42" width="24" height="8" rx="4" fill="#2D7A0E"/>
+      </svg>
+    </div>
+
+    <div class="history-content">
+      <h2 class="section-title">History</h2>
+      <div id="history-list" class="history-list"></div>
+    </div>
+  </section>
+
+  <!-- 7. PROFILE/ACCOUNT -->
+  <section id="profile-section" class="section hidden">
+    <!-- Topbar with back -->
+    <div class="topbar">
+      <button id="profile-back-btn" class="back-link" aria-label="Back">
+        <span aria-hidden="true">←</span> Back
+      </button>
+      <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
+        <rect x="12" y="14" width="40" height="8" rx="4" fill="#1A1A2E"/>
+        <rect x="12" y="28" width="32" height="8" rx="4" fill="#636B74"/>
+        <rect x="12" y="42" width="24" height="8" rx="4" fill="#2D7A0E"/>
+      </svg>
+    </div>
+
+    <div class="profile-content">
+      <h2 class="section-title">Account</h2>
+      <div class="profile-info-box">
+        <p id="profile-name" class="profile-name"></p>
+        <p id="profile-email" class="profile-email"></p>
+      </div>
+      <button id="dashboard-btn" class="btn btn-outline" type="button">Open Dashboard</button>
+      <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+    </div>
+  </section>
+
+  <!-- 8. LIMIT REACHED -->
   <section id="limit-section" class="section hidden">
-    <div class="limit-icon">&#9940;</div>
-    <h2>Mēneša limits sasniegts</h2>
-    <p id="limit-info"></p>
-    <button id="limit-back-btn" class="btn btn-secondary">Atpakaļ</button>
+    <div class="topbar">
+      <button id="limit-back-btn" class="back-link" aria-label="Back">
+        <span aria-hidden="true">←</span> Back
+      </button>
+      <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
+        <rect x="12" y="14" width="40" height="8" rx="4" fill="#1A1A2E"/>
+        <rect x="12" y="28" width="32" height="8" rx="4" fill="#636B74"/>
+        <rect x="12" y="42" width="24" height="8" rx="4" fill="#2D7A0E"/>
+      </svg>
+    </div>
+
+    <div class="limit-content">
+      <div class="limit-icon">🚫</div>
+      <h2 class="limit-title">Monthly limit reached</h2>
+      <p id="limit-info" class="limit-info"></p>
+      <button id="upgrade-btn" class="btn btn-primary" type="button">Get more checks</button>
+    </div>
   </section>
 
-  <!-- 7. ERROR -->
+  <!-- 9. ERROR -->
   <section id="error-section" class="section hidden">
-    <div class="error-icon">&#9888;&#65039;</div>
-    <p id="error-message"></p>
-    <button id="error-back-btn" class="btn btn-secondary">Atpakaļ</button>
+    <div class="topbar">
+      <button id="error-back-btn" class="back-link" aria-label="Back">
+        <span aria-hidden="true">←</span> Back
+      </button>
+      <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
+        <rect x="12" y="14" width="40" height="8" rx="4" fill="#1A1A2E"/>
+        <rect x="12" y="28" width="32" height="8" rx="4" fill="#636B74"/>
+        <rect x="12" y="42" width="24" height="8" rx="4" fill="#2D7A0E"/>
+      </svg>
+    </div>
+
+    <div class="error-content">
+      <div class="error-icon">⚠️</div>
+      <p id="error-message" class="error-message"></p>
+      <button id="error-retry-btn" class="btn btn-primary" type="button">Try again</button>
+    </div>
   </section>
 
   <script src="config.js"></script>

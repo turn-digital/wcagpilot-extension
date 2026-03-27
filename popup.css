@@ -1,23 +1,24 @@
 /* Minimal fallback CSS — full styles loaded from server */
 /* This ensures the popup is usable even if server is unreachable */
 
-* {
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
 body {
-  width: 380px;
+  width: 360px;
   min-height: 200px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 14px;
-  color: #1a1a1a;
+  color: #1a1a2e;
   background: #fff;
+  line-height: 1.5;
 }
 
 .section {
-  padding: 20px;
+  min-height: 200px;
 }
 
 .hidden {
@@ -25,51 +26,40 @@ body {
 }
 
 .btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  font-size: 14px;
+  gap: 10px;
+  width: 100%;
+  height: 48px;
+  border-radius: 10px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 15px;
+  border: none;
   cursor: pointer;
-  background: #f1f3f4;
 }
 
 .btn-primary {
-  background: #1a73e8;
+  background: #000;
   color: #fff;
-  border-color: #1a73e8;
 }
 
-.btn-secondary {
-  background: #fff;
-  color: #1a1a1a;
-  border-color: #ddd;
-}
-
-.btn-secondary:hover {
-  background: #f8f9fa;
-}
-
-.auth-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.btn-outline {
+  background: transparent;
+  border: 1.5px solid #c6cad0;
+  color: #000;
 }
 
 .spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid #e8eaed;
-  border-top-color: #1a73e8;
+  width: 48px;
+  height: 48px;
+  border: 4px solid #e8f5e1;
+  border-top-color: #66ba1e;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  margin: 0 auto;
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
-
