@@ -8,6 +8,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="popup.css">
+  <style>
+    /* Critical inline styles to prevent FOUC */
+    body { margin: 0; font-family: 'Inter', sans-serif; }
+    .section { display: none; }
+    #login-section { display: flex; }
+    .hidden { display: none !important; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 10px; font-size: 14px; border: none; cursor: pointer; }
+    .btn-icon { width: 20px; height: 20px; flex-shrink: 0; }
+  </style>
 </head>
 <body>
 
@@ -31,7 +40,7 @@
       <!-- Auth buttons -->
       <div class="auth-buttons">
         <button id="google-btn" class="btn btn-google" type="button">
-          <svg class="btn-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <svg class="btn-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <path d="M17.64 10.2c0-.63-.06-1.25-.16-1.84H10v3.48h4.3a3.68 3.68 0 0 1-1.6 2.41v2h2.58c1.51-1.39 2.38-3.44 2.38-6.05z" fill="#4285F4"/>
             <path d="M10 18c2.16 0 3.97-.72 5.3-1.94l-2.58-2a5.07 5.07 0 0 1-2.72.77 5.05 5.05 0 0 1-4.74-3.49H2.58v2.07A8 8 0 0 0 10 18z" fill="#34A853"/>
             <path d="M5.26 11.34a4.8 4.8 0 0 1 0-3.07V6.2H2.58a8 8 0 0 0 0 7.18l2.68-2.04z" fill="#FBBC05"/>
@@ -40,7 +49,7 @@
           Sign in with Google
         </button>
         <button id="email-login-btn" class="btn btn-outline" type="button">
-          <svg class="btn-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <svg class="btn-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <rect x="2" y="4" width="16" height="12" rx="2" stroke="#1A1A2E" stroke-width="1.5" fill="none"/>
             <polyline points="2,4 10,11 18,4" stroke="#1A1A2E" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
