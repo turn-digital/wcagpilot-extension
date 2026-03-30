@@ -1,8 +1,12 @@
 // background.js — Service Worker for OAuth handling
 // This runs persistently and won't close when popup loses focus
 
-const WORKER_URL = "https://a11y-test-worker.peteris-6aa.workers.dev";
-const GOOGLE_CLIENT_ID = "268844119090-fde6bu1ldovlmt7ap41dal4pq0f95d8a.apps.googleusercontent.com";
+// Import config (service worker uses importScripts)
+importScripts("config.js");
+
+const ACCOUNTS_URL = CONFIG.ACCOUNTS_URL;  // Auth endpoints
+const WORKER_URL = CONFIG.WORKER_URL;      // Check/history/limits endpoints
+const GOOGLE_CLIENT_ID = CONFIG.GOOGLE_CLIENT_ID;
 const REDIRECT_URI = chrome.identity.getRedirectURL();
 
 // =============================================
@@ -34,7 +38,7 @@ async function generateCodeChallenge(verifier) {
 // =============================================
 
 async function exchangeGoogleCode({ code, code_verifier, redirect_uri }) {
-  const response = await fetch(WORKER_URL + "/api/auth/google", {
+  const response = await fetch(ACCOUNTS_URL + "/api/auth/google", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, code_verifier, redirect_uri }),
@@ -47,6 +51,24 @@ async function exchangeGoogleCode({ code, code_verifier, redirect_uri }) {
   }
 
   return result;
+}
+
+/** Fetch limits from wcagpilot worker */
+async function fetchLimits(token) {
+  try {
+    const response = await fetch(WORKER_URL + "/api/limits", {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token,
+      },
+    });
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (err) {
+    console.log("[WCAGpilot] Failed to fetch limits:", err.message);
+  }
+  return null;
 }
 
 // =============================================
@@ -101,12 +123,15 @@ async function loginWithGoogle() {
     },
   });
 
+  // Fetch limits from wcagpilot worker (auth worker doesn't have this data)
+  const limits = await fetchLimits(result.session_token);
+
   return {
     provider: "google",
     token: result.session_token,
     expiresAt: result.expires_at,
     user: result.user,
-    limits: result.limits,
+    limits: limits,
   };
 }
 
@@ -115,7 +140,7 @@ async function loginWithGoogle() {
 // =============================================
 
 async function sendEmailCode(email) {
-  const response = await fetch(WORKER_URL + "/api/auth/email/send-code", {
+  const response = await fetch(ACCOUNTS_URL + "/api/auth/email/send-code", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
@@ -131,7 +156,7 @@ async function sendEmailCode(email) {
 }
 
 async function verifyEmailCode(email, code) {
-  const response = await fetch(WORKER_URL + "/api/auth/email/verify", {
+  const response = await fetch(ACCOUNTS_URL + "/api/auth/email/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, code }),
@@ -153,12 +178,15 @@ async function verifyEmailCode(email, code) {
     },
   });
 
+  // Fetch limits from wcagpilot worker (auth worker doesn't have this data)
+  const limits = await fetchLimits(result.session_token);
+
   return {
     provider: "email",
     token: result.session_token,
     expiresAt: result.expires_at,
     user: result.user,
-    limits: result.limits,
+    limits: limits,
   };
 }
 

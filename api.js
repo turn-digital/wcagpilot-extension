@@ -1,7 +1,8 @@
 // api.js — Session-based auth, Worker communication, heading extraction
 // Configuration comes from config.js (loaded before this file)
 
-const WORKER_URL = CONFIG.WORKER_URL;
+const ACCOUNTS_URL = CONFIG.ACCOUNTS_URL;  // Auth endpoints
+const WORKER_URL = CONFIG.WORKER_URL;      // Check/history endpoints
 const GOOGLE_CLIENT_ID = CONFIG.GOOGLE_CLIENT_ID;
 const REDIRECT_URI = chrome.identity.getRedirectURL();
 
@@ -60,11 +61,11 @@ async function workerFetch(endpoint, options = {}) {
 }
 
 /**
- * Google OAuth token exchange — sends auth code to Worker, receives session_token.
+ * Google OAuth token exchange — sends auth code to Accounts service, receives session_token.
  * Public endpoint — no Bearer token required.
  */
 async function exchangeGoogleCode({ code, code_verifier, redirect_uri }) {
-  const response = await fetch(WORKER_URL + "/api/auth/google", {
+  const response = await fetch(ACCOUNTS_URL + "/api/auth/google", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, code_verifier, redirect_uri }),
@@ -80,14 +81,65 @@ async function exchangeGoogleCode({ code, code_verifier, redirect_uri }) {
 }
 
 async function verifyToken() {
-  return workerFetch("/api/auth/verify", { method: "POST" });
+  const data = await chrome.storage.local.get(["auth"]);
+  if (!data.auth?.token) throw new Error("Not authenticated");
+
+  console.log("[WCAGpilot] verifyToken: Verifying with auth worker...");
+
+  const response = await fetch(ACCOUNTS_URL + "/api/auth/verify", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + data.auth.token,
+    },
+  });
+
+  console.log("[WCAGpilot] verifyToken: Response status:", response.status);
+
+  if (response.status === 401) {
+    await chrome.storage.local.remove(["auth"]);
+    throw new Error("Session expired — please sign in again");
+  }
+
+  const result = await response.json();
+  console.log("[WCAGpilot] verifyToken: Result:", result);
+
+  if (!response.ok) {
+    throw new Error(result.error?.message || "Error (" + response.status + ")");
+  }
+
+  // Use user from response, or fall back to cached user
+  const user = result.user || data.auth.user;
+
+  // Fetch limits from wcagpilot worker (auth worker doesn't have this data)
+  let limits = null;
+  try {
+    limits = await getLimits();
+    console.log("[WCAGpilot] verifyToken: Limits fetched:", limits);
+  } catch (err) {
+    console.log("[WCAGpilot] Failed to fetch limits:", err?.message || err);
+  }
+
+  return {
+    user: user,
+    limits: limits,
+  };
 }
 
 async function logout() {
-  try {
-    await workerFetch("/api/auth/logout", { method: "POST" });
-  } catch {
-    // Ignore errors on logout
+  const data = await chrome.storage.local.get(["auth"]);
+  if (data.auth?.token) {
+    try {
+      await fetch(ACCOUNTS_URL + "/api/auth/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + data.auth.token,
+        },
+      });
+    } catch {
+      // Ignore errors on logout
+    }
   }
   await chrome.storage.local.remove(["auth"]);
 }
@@ -211,47 +263,3 @@ async function extractFromActiveTab() {
   return result.result;
 }
 
-// =============================================
-// Axe-core accessibility scanning (background, not shown to user)
-// =============================================
-
-async function runAxeScan() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-  if (!tab?.id) {
-    return { error: "No active tab" };
-  }
-
-  // Cannot inject into chrome://, edge://, about: pages
-  if (
-    tab.url?.startsWith("chrome://") ||
-    tab.url?.startsWith("chrome-extension://") ||
-    tab.url?.startsWith("edge://") ||
-    tab.url?.startsWith("about:")
-  ) {
-    return { error: "Cannot scan browser internal pages" };
-  }
-
-  try {
-    // 1. First inject axe-core library
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ["axe-core.min.js"],
-    });
-
-    // 2. Then run the scanning script
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ["run-axe.js"],
-    });
-
-    if (!result?.result) {
-      return { error: "Failed to run axe scan" };
-    }
-
-    return result.result;
-  } catch (err) {
-    console.error("Axe scan error:", err);
-    return { error: err.message || "Axe scan error" };
-  }
-}

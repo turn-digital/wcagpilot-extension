@@ -98,8 +98,17 @@ let currentUrl = "";
 // UI state management
 // ============================================================
 function showSection(name) {
-  Object.values(sections).forEach((s) => s.classList.add("hidden"));
-  sections[name].classList.remove("hidden");
+  console.log("[WCAGpilot] showSection:", name);
+  Object.values(sections).forEach((s) => {
+    if (s) s.classList.add("hidden");
+  });
+  if (sections[name]) {
+    sections[name].classList.remove("hidden");
+  } else {
+    console.error("[WCAGpilot] Section not found:", name);
+    // Fallback to login section
+    if (sections.login) sections.login.classList.remove("hidden");
+  }
 }
 
 // ============================================================
@@ -164,6 +173,8 @@ function shouldShowOnboarding() {
 // Home screen
 // ============================================================
 async function showHome() {
+  console.log("[WCAGpilot] showHome: currentUser:", currentUser?.email, "currentLimits:", currentLimits);
+
   // Update profile initial
   if (currentUser) {
     const initial = (currentUser.name || currentUser.email || "?").charAt(0).toUpperCase();
@@ -186,6 +197,7 @@ async function showHome() {
       $("current-url").textContent = tab.url;
     }
   } catch (err) {
+    console.log("[WCAGpilot] showHome: Failed to get tab URL:", err);
     $("current-url").textContent = "Unable to get current page";
   }
 
@@ -384,27 +396,8 @@ async function handleCheck() {
 
     $("loading-text").textContent = UI.labels.loading_analyze;
 
-    // Run axe scan in background (optional, don't block on failure)
-    const axePromise = runAxeScan().catch((err) => {
-      console.warn("[WCAGpilot] Axe scan failed:", err.message);
-      return { error: err.message };
-    });
-
-    // Wait for axe with timeout (max 10 seconds)
-    const axeWithTimeout = Promise.race([
-      axePromise,
-      new Promise((resolve) => setTimeout(() => resolve({ error: "timeout" }), 10000)),
-    ]);
-
-    const [axeResults] = await Promise.all([axeWithTimeout]);
-
     // Send to server
-    const checkData = {
-      ...headings,
-      axeResults: axeResults,
-    };
-
-    const result = await checkPage(checkData);
+    const result = await checkPage(headings);
 
     if (result.error?.code === "LIMIT_EXCEEDED") {
       showLimitReached(result.error.details);
@@ -446,21 +439,22 @@ $("google-btn").addEventListener("click", async () => {
   $("google-btn").disabled = true;
   try {
     const response = await chrome.runtime.sendMessage({ action: "login", provider: "google" });
-    if (response.success) {
-      currentUser = response.data.user;
-      currentLimits = response.data.limits;
+    if (response?.success) {
+      currentUser = response.data?.user;
+      currentLimits = response.data?.limits;
 
       // Check if should show onboarding
       if (shouldShowOnboarding()) {
         showSection("onboard");
       } else {
-        showHome();
+        await showHome();
       }
     } else {
-      showError(response.error);
+      showError(response?.error || "Login failed");
     }
   } catch (err) {
-    showError(err.message);
+    console.error("[WCAGpilot] Login error:", err);
+    showError(err?.message || "Login failed");
   } finally {
     $("google-btn").disabled = false;
   }
@@ -516,40 +510,47 @@ initOnboarding();
 // Startup
 // ============================================================
 (async () => {
-  // Load UI (CSS + labels) from server
-  await loadUIFromServer();
+  try {
+    // Load UI (CSS + labels) from server
+    await loadUIFromServer();
 
-  // Check existing session
-  const data = await chrome.storage.local.get(["auth"]);
-  console.log("[WCAGpilot] Startup - auth data:", data.auth ? "exists" : "missing");
+    // Check existing session
+    const data = await chrome.storage.local.get(["auth"]);
+    console.log("[WCAGpilot] Startup - auth data:", data.auth ? "exists" : "missing");
 
-  if (data.auth?.token) {
-    try {
-      const result = await verifyToken();
-      console.log("[WCAGpilot] Token verified successfully");
-      currentUser = result.user;
-      currentLimits = result.limits;
+    if (data.auth?.token) {
+      try {
+        const result = await verifyToken();
+        console.log("[WCAGpilot] Token verified successfully");
+        currentUser = result.user;
+        currentLimits = result.limits;
 
-      // Check if should show onboarding
-      if (shouldShowOnboarding()) {
-        showSection("onboard");
-      } else {
-        showHome();
+        // Check if should show onboarding
+        if (shouldShowOnboarding()) {
+          showSection("onboard");
+        } else {
+          showHome();
+        }
+      } catch (err) {
+        const errMsg = err?.message || String(err);
+        console.error("[WCAGpilot] Token verification failed:", errMsg);
+        // Only clear auth if it's a 401 (invalid token), not network errors
+        if (errMsg.includes("401") || errMsg.includes("Session expired")) {
+          await chrome.storage.local.remove(["auth"]);
+          showSection("login");
+        } else {
+          // Network error - show home with cached data
+          console.log("[WCAGpilot] Network error, using cached auth");
+          currentUser = data.auth.user;
+          showHome();
+        }
       }
-    } catch (err) {
-      console.error("[WCAGpilot] Token verification failed:", err.message);
-      // Only clear auth if it's a 401 (invalid token), not network errors
-      if (err.message.includes("401") || err.message.includes("Session expired")) {
-        await chrome.storage.local.remove(["auth"]);
-        showSection("login");
-      } else {
-        // Network error - show home with cached data
-        console.log("[WCAGpilot] Network error, using cached auth");
-        currentUser = data.auth.user;
-        showHome();
-      }
+    } else {
+      showSection("login");
     }
-  } else {
+  } catch (startupErr) {
+    // Catch-all: if anything fails during startup, show login
+    console.error("[WCAGpilot] Startup error:", startupErr);
     showSection("login");
   }
 })();
