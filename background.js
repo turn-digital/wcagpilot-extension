@@ -123,8 +123,12 @@ async function loginWithGoogle() {
     },
   });
 
-  // Fetch limits from wcagpilot worker (auth worker doesn't have this data)
-  const limits = await fetchLimits(result.session_token);
+  // Use limits from auth response (now stored in central-auth DB)
+  let limits = result.limits || null;
+  if (!limits) {
+    // Fallback: fetch from API worker
+    limits = await fetchLimits(result.session_token);
+  }
 
   return {
     provider: "google",
@@ -178,8 +182,12 @@ async function verifyEmailCode(email, code) {
     },
   });
 
-  // Fetch limits from wcagpilot worker (auth worker doesn't have this data)
-  const limits = await fetchLimits(result.session_token);
+  // Use limits from auth response (now stored in central-auth DB)
+  let limits = result.limits || null;
+  if (!limits) {
+    // Fallback: fetch from API worker
+    limits = await fetchLimits(result.session_token);
+  }
 
   return {
     provider: "email",

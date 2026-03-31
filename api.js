@@ -108,16 +108,32 @@ async function verifyToken() {
     throw new Error(result.error?.message || "Error (" + response.status + ")");
   }
 
-  // Use user from response, or fall back to cached user
+  // Use user from response (includes plan), or fall back to cached user
   const user = result.user || data.auth.user;
 
-  // Fetch limits from wcagpilot worker (auth worker doesn't have this data)
-  let limits = null;
-  try {
-    limits = await getLimits();
-    console.log("[WCAGpilot] verifyToken: Limits fetched:", limits);
-  } catch (err) {
-    console.log("[WCAGpilot] Failed to fetch limits:", err?.message || err);
+  // Update stored auth with latest user data (includes plan from auth)
+  if (result.user) {
+    await chrome.storage.local.set({
+      auth: {
+        ...data.auth,
+        user: result.user,
+      },
+    });
+    console.log("[WCAGpilot] verifyToken: Updated stored user with plan:", result.user.plan);
+  }
+
+  // Use limits from auth response (now stored in central-auth DB)
+  let limits = result.limits || null;
+  if (limits) {
+    console.log("[WCAGpilot] verifyToken: Limits from auth:", limits);
+  } else {
+    // Fallback: fetch from API worker (which also reads from AUTH_DB now)
+    try {
+      limits = await getLimits();
+      console.log("[WCAGpilot] verifyToken: Limits fetched from API:", limits);
+    } catch (err) {
+      console.log("[WCAGpilot] Failed to fetch limits:", err?.message || err);
+    }
   }
 
   return {

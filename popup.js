@@ -228,6 +228,12 @@ function showProfile() {
   if (currentUser) {
     $("profile-name").textContent = currentUser.name || currentUser.email || "";
     $("profile-email").textContent = currentUser.email || "";
+    const plan = currentUser.plan || "free";
+    const planEl = $("profile-plan");
+    if (planEl) {
+      planEl.textContent = plan === "pro" ? "Pro Plan" : "Free Plan";
+      planEl.className = "profile-plan" + (plan === "pro" ? " profile-plan-pro" : "");
+    }
   }
   showSection("profile");
 }
