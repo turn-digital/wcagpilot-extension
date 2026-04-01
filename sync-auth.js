@@ -21,7 +21,6 @@
       if (isLogout && !stored && !syncedFromExtension) {
         chrome.runtime.sendMessage({ action: "clearAuth" }, () => {
           if (chrome.runtime.lastError) return;
-          console.log("[WCAGpilot] Logout synced to extension");
         });
         appHadAuth = false;
         return;
@@ -47,9 +46,6 @@
         },
       }, (response) => {
         if (chrome.runtime.lastError) return;
-        if (response?.success) {
-          console.log("[WCAGpilot] Auth synced to extension");
-        }
       });
     } catch (err) {
       // Ignore errors
@@ -77,7 +73,6 @@
           // Extension has auth
           if (!appHasAuth) {
             // App doesn't have auth, sync from extension
-            console.log("[WCAGpilot] Auth received from extension");
             syncedFromExtension = true;
             appHadAuth = true;
             localStorage.setItem("auth", JSON.stringify(response.auth));
@@ -91,7 +86,6 @@
           // Extension has NO auth
           if (appHasAuth) {
             // App has auth but extension doesn't - user logged out in extension
-            console.log("[WCAGpilot] Extension logged out, clearing app auth");
             syncedFromExtension = true;
             appHadAuth = false;
             localStorage.removeItem("auth");
@@ -108,7 +102,6 @@
   // Listen for logout message from extension
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "logout") {
-      console.log("[WCAGpilot] Logout received from extension");
       appHadAuth = false;
       syncedFromExtension = true; // Prevent syncing this logout back
       localStorage.removeItem("auth");

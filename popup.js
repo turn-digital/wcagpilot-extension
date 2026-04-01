@@ -61,11 +61,9 @@ async function loadUIFromServer() {
       if (data.dashboard_url) {
         UI.dashboard_url = data.dashboard_url;
       }
-
-      console.log("[WCAGpilot] UI loaded from server, version:", data.version);
     }
   } catch (err) {
-    console.warn("[WCAGpilot] Failed to load UI from server, using defaults:", err.message);
+    // Failed to load UI from server, using defaults
   }
 }
 
@@ -98,15 +96,13 @@ let currentUrl = "";
 // UI state management
 // ============================================================
 function showSection(name) {
-  console.log("[WCAGpilot] showSection:", name);
   Object.values(sections).forEach((s) => {
     if (s) s.classList.add("hidden");
   });
   if (sections[name]) {
     sections[name].classList.remove("hidden");
   } else {
-    console.error("[WCAGpilot] Section not found:", name);
-    // Fallback to login section
+    // Section not found - fallback to login section
     if (sections.login) sections.login.classList.remove("hidden");
   }
 }
@@ -173,8 +169,6 @@ function shouldShowOnboarding() {
 // Home screen
 // ============================================================
 async function showHome() {
-  console.log("[WCAGpilot] showHome: currentUser:", currentUser?.email, "currentLimits:", currentLimits);
-
   // Update profile initial
   if (currentUser) {
     const initial = (currentUser.name || currentUser.email || "?").charAt(0).toUpperCase();
@@ -197,7 +191,6 @@ async function showHome() {
       $("current-url").textContent = tab.url;
     }
   } catch (err) {
-    console.log("[WCAGpilot] showHome: Failed to get tab URL:", err);
     $("current-url").textContent = "Unable to get current page";
   }
 
@@ -459,7 +452,6 @@ $("google-btn").addEventListener("click", async () => {
       showError(response?.error || "Login failed");
     }
   } catch (err) {
-    console.error("[WCAGpilot] Login error:", err);
     showError(err?.message || "Login failed");
   } finally {
     $("google-btn").disabled = false;
@@ -522,12 +514,10 @@ initOnboarding();
 
     // Check existing session
     const data = await chrome.storage.local.get(["auth"]);
-    console.log("[WCAGpilot] Startup - auth data:", data.auth ? "exists" : "missing");
 
     if (data.auth?.token) {
       try {
         const result = await verifyToken();
-        console.log("[WCAGpilot] Token verified successfully");
         currentUser = result.user;
         currentLimits = result.limits;
 
@@ -539,14 +529,12 @@ initOnboarding();
         }
       } catch (err) {
         const errMsg = err?.message || String(err);
-        console.error("[WCAGpilot] Token verification failed:", errMsg);
         // Only clear auth if it's a 401 (invalid token), not network errors
         if (errMsg.includes("401") || errMsg.includes("Session expired")) {
           await chrome.storage.local.remove(["auth"]);
           showSection("login");
         } else {
           // Network error - show home with cached data
-          console.log("[WCAGpilot] Network error, using cached auth");
           currentUser = data.auth.user;
           showHome();
         }
@@ -556,7 +544,6 @@ initOnboarding();
     }
   } catch (startupErr) {
     // Catch-all: if anything fails during startup, show login
-    console.error("[WCAGpilot] Startup error:", startupErr);
     showSection("login");
   }
 })();

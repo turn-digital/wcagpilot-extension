@@ -66,7 +66,7 @@ async function fetchLimits(token) {
       return await response.json();
     }
   } catch (err) {
-    console.log("[WCAGpilot] Failed to fetch limits:", err.message);
+    // Ignore errors
   }
   return null;
 }
@@ -123,12 +123,8 @@ async function loginWithGoogle() {
     },
   });
 
-  // Use limits from auth response (now stored in central-auth DB)
-  let limits = result.limits || null;
-  if (!limits) {
-    // Fallback: fetch from API worker
-    limits = await fetchLimits(result.session_token);
-  }
+  // Always fetch limits from API worker (site-specific subscription data)
+  const limits = await fetchLimits(result.session_token);
 
   return {
     provider: "google",
@@ -182,12 +178,8 @@ async function verifyEmailCode(email, code) {
     },
   });
 
-  // Use limits from auth response (now stored in central-auth DB)
-  let limits = result.limits || null;
-  if (!limits) {
-    // Fallback: fetch from API worker
-    limits = await fetchLimits(result.session_token);
-  }
+  // Always fetch limits from API worker (site-specific subscription data)
+  const limits = await fetchLimits(result.session_token);
 
   return {
     provider: "email",
@@ -204,19 +196,16 @@ async function verifyEmailCode(email, code) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "login") {
-    // Only Google is supported now
     loginWithGoogle()
       .then((result) => sendResponse({ success: true, data: result }))
       .catch((err) => sendResponse({ success: false, error: err.message }));
-
-    return true; // Keep channel open for async response
+    return true;
   }
 
   if (message.action === "sendEmailCode") {
     sendEmailCode(message.email)
       .then((result) => sendResponse({ success: true, data: result }))
       .catch((err) => sendResponse({ success: false, error: err.message }));
-
     return true;
   }
 
@@ -224,7 +213,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     verifyEmailCode(message.email, message.code)
       .then((result) => sendResponse({ success: true, data: result }))
       .catch((err) => sendResponse({ success: false, error: err.message }));
-
     return true;
   }
 
@@ -239,7 +227,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           user: auth.user,
         },
       }).then(() => {
-        console.log("[WCAGpilot] Auth synced from web app");
         sendResponse({ success: true });
       }).catch((err) => {
         sendResponse({ success: false, error: err.message });
@@ -253,7 +240,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Clear auth (logout sync from app)
   if (message.action === "clearAuth") {
     chrome.storage.local.remove(["auth"]).then(() => {
-      console.log("[WCAGpilot] Auth cleared (synced from app logout)");
       sendResponse({ success: true });
     }).catch(() => {
       sendResponse({ success: false });
@@ -277,9 +263,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // =============================================
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === "local" && changes.auth) {
-    // Auth was removed (logout)
     if (!changes.auth.newValue && changes.auth.oldValue) {
-      console.log("[WCAGpilot] Auth removed, notifying app tabs");
       notifyAppTabsLogout();
     }
   }
@@ -297,8 +281,6 @@ async function notifyAppTabsLogout() {
       });
     }
   } catch (err) {
-    console.log("[WCAGpilot] Error notifying tabs:", err.message);
+    // Ignore errors
   }
 }
-
-console.log("[WCAGpilot] Background service worker loaded");

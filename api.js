@@ -84,8 +84,6 @@ async function verifyToken() {
   const data = await chrome.storage.local.get(["auth"]);
   if (!data.auth?.token) throw new Error("Not authenticated");
 
-  console.log("[WCAGpilot] verifyToken: Verifying with auth worker...");
-
   const response = await fetch(ACCOUNTS_URL + "/api/auth/verify", {
     method: "POST",
     headers: {
@@ -94,24 +92,21 @@ async function verifyToken() {
     },
   });
 
-  console.log("[WCAGpilot] verifyToken: Response status:", response.status);
-
   if (response.status === 401) {
     await chrome.storage.local.remove(["auth"]);
     throw new Error("Session expired — please sign in again");
   }
 
   const result = await response.json();
-  console.log("[WCAGpilot] verifyToken: Result:", result);
 
   if (!response.ok) {
     throw new Error(result.error?.message || "Error (" + response.status + ")");
   }
 
-  // Use user from response (includes plan), or fall back to cached user
+  // Use user from response, or fall back to cached user
   const user = result.user || data.auth.user;
 
-  // Update stored auth with latest user data (includes plan from auth)
+  // Update stored auth with latest user data
   if (result.user) {
     await chrome.storage.local.set({
       auth: {
@@ -119,21 +114,14 @@ async function verifyToken() {
         user: result.user,
       },
     });
-    console.log("[WCAGpilot] verifyToken: Updated stored user with plan:", result.user.plan);
   }
 
-  // Use limits from auth response (now stored in central-auth DB)
-  let limits = result.limits || null;
-  if (limits) {
-    console.log("[WCAGpilot] verifyToken: Limits from auth:", limits);
-  } else {
-    // Fallback: fetch from API worker (which also reads from AUTH_DB now)
-    try {
-      limits = await getLimits();
-      console.log("[WCAGpilot] verifyToken: Limits fetched from API:", limits);
-    } catch (err) {
-      console.log("[WCAGpilot] Failed to fetch limits:", err?.message || err);
-    }
+  // Always fetch limits from API worker (site-specific subscription data)
+  let limits = null;
+  try {
+    limits = await getLimits();
+  } catch (err) {
+    // Ignore limits fetch errors
   }
 
   return {
@@ -208,7 +196,6 @@ async function loginWithGoogle() {
     token: result.session_token,
     expiresAt: result.expires_at,
     user: result.user,
-    limits: result.limits,
   };
 }
 
