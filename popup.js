@@ -21,6 +21,7 @@ let UI = {
     check_language_quality: "Headings are descriptive",
     // UI labels
     badge_pass: "✓ Passed",
+    badge_warning: "⚠ Review needed",
     badge_fail: "✗ Failed",
     btn_check: "Check this page",
     btn_history: "View history",
@@ -240,17 +241,21 @@ function showResult(data) {
   // Update URL
   $("result-url").textContent = currentUrl;
 
-  // Determine pass/fail
-  const compliant = Array.isArray(data.checks) && data.checks.every((c) => c.status === "pass");
+  // Determine compliance: only "fail" causes non-compliance
+  const compliant = Array.isArray(data.checks) && data.checks.every((c) => c.status !== "fail");
+  const hasWarnings = Array.isArray(data.checks) && data.checks.some((c) => c.status === "warning");
 
   // Update verdict box
   const verdictBox = $("verdict-box");
   const verdictTitle = $("verdict-title");
   const verdictSummary = $("verdict-summary");
 
-  if (compliant) {
+  if (compliant && !hasWarnings) {
     verdictBox.className = "verdict-box verdict-pass";
     verdictTitle.textContent = "✓ Passed";
+  } else if (compliant && hasWarnings) {
+    verdictBox.className = "verdict-box verdict-warning";
+    verdictTitle.textContent = "⚠ Review needed";
   } else {
     verdictBox.className = "verdict-box verdict-fail";
     verdictTitle.textContent = "✗ Failed";
@@ -267,10 +272,20 @@ function showResult(data) {
       const div = document.createElement("div");
       div.className = "check-item";
 
-      const isPass = check.status === "pass";
-      const icon = isPass ? "✓" : "✗";
-      const iconClass = isPass ? "check-icon check-icon-pass" : "check-icon check-icon-fail";
-      const labelClass = isPass ? "check-label" : "check-label check-label-fail";
+      let icon, iconClass, labelClass;
+      if (check.status === "pass") {
+        icon = "✓";
+        iconClass = "check-icon check-icon-pass";
+        labelClass = "check-label";
+      } else if (check.status === "warning") {
+        icon = "⚠";
+        iconClass = "check-icon check-icon-warning";
+        labelClass = "check-label check-label-warning";
+      } else {
+        icon = "✗";
+        iconClass = "check-icon check-icon-fail";
+        labelClass = "check-label check-label-fail";
+      }
       const label = checkLabel(check.id);
 
       div.innerHTML = `
@@ -279,6 +294,14 @@ function showResult(data) {
       `;
       checksList.appendChild(div);
     });
+  }
+
+  // Hide "See how to fix it" button if everything passes (no issues to fix)
+  const detailsBtn = $("details-btn");
+  if (compliant && !hasWarnings) {
+    detailsBtn.classList.add("hidden");
+  } else {
+    detailsBtn.classList.remove("hidden");
   }
 
   // Update limits if returned
