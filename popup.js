@@ -339,20 +339,53 @@ function renderHistory(data) {
     const badgeText = isPass ? "OK" : `${check.issues_count} issues`;
 
     div.innerHTML = `
-      <span class="history-item-url">${escapeHtml(check.url)}</span>
+      <span class="history-item-url">${escapeHtml(truncateUrl(check.url, 45))}</span>
       <span class="history-item-meta">
         <span class="${badgeClass}">${badgeText}</span>
         <span>${formatDate(check.created_at)}</span>
       </span>
     `;
+
+    // Click to open in dashboard
+    div.addEventListener("click", () => {
+      openCheckInDashboard(check.id);
+    });
+
     list.appendChild(div);
   });
 
   showSection("history");
 }
 
+/** Truncate URL showing start and end */
+function truncateUrl(url, maxLength) {
+  if (!url || url.length <= maxLength) return url;
+
+  // Remove protocol for display
+  let display = url.replace(/^https?:\/\//, "");
+
+  if (display.length <= maxLength) return display;
+
+  // Show start...end
+  const keepChars = Math.floor((maxLength - 3) / 2);
+  return display.slice(0, keepChars) + "..." + display.slice(-keepChars);
+}
+
+/** Open specific check in dashboard */
+function openCheckInDashboard(checkId) {
+  chrome.storage.local.get(["auth"], (data) => {
+    let url = UI.dashboard_url + "?id=" + checkId;
+    if (data.auth?.token) {
+      url += "&ext_token=" + encodeURIComponent(data.auth.token);
+    }
+    chrome.tabs.create({ url });
+  });
+}
+
 function formatDate(dateStr) {
-  const date = new Date(dateStr);
+  // Server returns UTC dates without 'Z' suffix - add it if missing
+  const normalized = dateStr.endsWith("Z") || dateStr.includes("+") ? dateStr : dateStr + "Z";
+  const date = new Date(normalized);
   const now = new Date();
   const diffMs = now - date;
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -532,11 +565,14 @@ initOnboarding();
 // ============================================================
 (async () => {
   try {
-    // Load UI (CSS + labels) from server
-    await loadUIFromServer();
+    // Show loading state while checking auth
+    $("loading-text").textContent = "Loading...";
 
-    // Check existing session
+    // Check storage first (fast, no network)
     const data = await chrome.storage.local.get(["auth"]);
+
+    // Load UI from server (don't block on this)
+    loadUIFromServer();
 
     if (data.auth?.token) {
       try {
