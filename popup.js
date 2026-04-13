@@ -26,7 +26,6 @@ let UI = {
     btn_check: "Check this page",
     btn_history: "View history",
     btn_dashboard: "Open Dashboard",
-    btn_recheck: "Check another page",
     btn_details: "See how to fix it",
     btn_details_pass: "View full report",
     btn_copy: "Copy result",
@@ -542,7 +541,6 @@ $("details-btn").addEventListener("click", () => {
     openDashboardWithToken();
   }
 });
-$("recheck-btn").addEventListener("click", handleCheck);
 
 // History screen
 $("history-back-btn").addEventListener("click", showHome);

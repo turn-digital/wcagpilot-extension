@@ -241,18 +241,150 @@
     }
   }
 
+  // Check if element is in accessibility tree
+  function isInA11yTree(el) {
+    // Check aria-hidden, inert, closed details/dialog on element or ancestors
+    var current = el;
+    while (current && current !== document.body) {
+      if (current.getAttribute("aria-hidden") === "true") return false;
+      if (current.hasAttribute("inert")) return false;
+      // Closed <details> hides children except <summary>
+      if (current.tagName === "DETAILS" && !current.open && el.tagName !== "SUMMARY") return false;
+      // Closed <dialog> hides all children
+      if (current.tagName === "DIALOG" && !current.open) return false;
+      current = current.parentElement;
+    }
+    // Check if role removes semantics
+    var role = el.getAttribute("role");
+    if (role === "presentation" || role === "none") return false;
+    // Check display:none / visibility:hidden / content-visibility:hidden (not in a11y tree)
+    try {
+      var s = window.getComputedStyle(el);
+      if (s.display === "none" || s.visibility === "hidden") return false;
+      if (s.contentVisibility === "hidden") return false;
+    } catch(e) { return false; }
+    return true;
+  }
+
   // Virsrakstu koks — tīra pašreizējā struktūra no DOM
-  var headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
+  // Include both native headings (h1-h6) AND ARIA headings (role="heading")
+  var nativeHeadings = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
+  var ariaHeadings = document.querySelectorAll('[role="heading"][aria-level]');
+
+  // Combine and deduplicate (native heading might also have role="heading")
+  var allHeadings = [];
+  var seen = new Set();
+
+  for (var i = 0; i < nativeHeadings.length; i++) {
+    allHeadings.push({ el: nativeHeadings[i], level: parseInt(nativeHeadings[i].tagName[1]), isAria: false });
+    seen.add(nativeHeadings[i]);
+  }
+  for (var i = 0; i < ariaHeadings.length; i++) {
+    if (!seen.has(ariaHeadings[i])) {
+      var ariaLevel = parseInt(ariaHeadings[i].getAttribute("aria-level")) || 2;
+      allHeadings.push({ el: ariaHeadings[i], level: ariaLevel, isAria: true });
+    }
+  }
+
+  // Sort by document order
+  allHeadings.sort(function(a, b) {
+    var pos = a.el.compareDocumentPosition(b.el);
+    if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+    if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+    return 0;
+  });
+
   var headingOutline = [];
-  for (var hi = 0; hi < headings.length; hi++) {
-    var h = headings[hi];
-    var level = parseInt(h.tagName[1]);
+  for (var hi = 0; hi < allHeadings.length; hi++) {
+    var item = allHeadings[hi];
+    var h = item.el;
+    var level = item.level;
     var hText = h.textContent.replace(/\s+/g, " ").trim();
     if (hText) {
       var indent = "  ".repeat(level - 1);
-      var hidden = !isVis(h) ? " [slepts]" : "";
-      headingOutline.push(indent + "H" + level + ": " + hText + hidden);
+      var visuallyHidden = !isVis(h);
+      var inA11yTree = isInA11yTree(h);
+      var tags = [];
+      if (visuallyHidden) tags.push("slepts");
+      if (!inA11yTree) tags.push("nav-a11y");
+      if (item.isAria) tags.push("aria");
+      var tagStr = tags.length > 0 ? " [" + tags.join(", ") + "]" : "";
+      headingOutline.push(indent + "H" + level + ": " + hText + tagStr);
     }
+  }
+
+  var headings = nativeHeadings; // Keep for headingCount compatibility
+
+  // === NEW: Detect heading-related ARIA issues ===
+  var headingIssues = [];
+
+  // 1. role="heading" without aria-level
+  var badAriaHeadings = document.querySelectorAll('[role="heading"]:not([aria-level])');
+  for (var i = 0; i < badAriaHeadings.length; i++) {
+    var el = badAriaHeadings[i];
+    var text = el.textContent.replace(/\s+/g, " ").trim().substring(0, 50);
+    headingIssues.push({
+      type: "aria_heading_no_level",
+      element: text || "(empty)",
+      message: "role=\"heading\" without aria-level"
+    });
+  }
+
+  // 2. Conflicting aria-level on native heading (e.g., <h2 aria-level="4">)
+  for (var i = 0; i < nativeHeadings.length; i++) {
+    var el = nativeHeadings[i];
+    var ariaLevel = el.getAttribute("aria-level");
+    if (ariaLevel) {
+      var nativeLevel = parseInt(el.tagName[1]);
+      var declaredLevel = parseInt(ariaLevel);
+      if (nativeLevel !== declaredLevel) {
+        var text = el.textContent.replace(/\s+/g, " ").trim().substring(0, 50);
+        headingIssues.push({
+          type: "conflicting_aria_level",
+          element: text || "(empty)",
+          message: "<" + el.tagName.toLowerCase() + "> with aria-level=\"" + ariaLevel + "\" (conflicts)"
+        });
+      }
+    }
+  }
+
+  // 3. role="presentation" or role="none" on native heading
+  for (var i = 0; i < nativeHeadings.length; i++) {
+    var el = nativeHeadings[i];
+    var role = el.getAttribute("role");
+    if (role === "presentation" || role === "none") {
+      var text = el.textContent.replace(/\s+/g, " ").trim().substring(0, 50);
+      headingIssues.push({
+        type: "heading_role_removed",
+        element: text || "(empty)",
+        message: "<" + el.tagName.toLowerCase() + "> with role=\"" + role + "\" (semantics removed)"
+      });
+    }
+  }
+
+  // 4. aria-hidden="true" on visible heading
+  for (var i = 0; i < nativeHeadings.length; i++) {
+    var el = nativeHeadings[i];
+    if (el.getAttribute("aria-hidden") === "true" && isVis(el)) {
+      var text = el.textContent.replace(/\s+/g, " ").trim().substring(0, 50);
+      headingIssues.push({
+        type: "visible_aria_hidden",
+        element: text || "(empty)",
+        message: "Visible heading with aria-hidden=\"true\""
+      });
+    }
+  }
+
+  // 5. Interactive element with role="heading"
+  var interactiveHeadings = document.querySelectorAll('button[role="heading"], a[role="heading"], input[role="heading"], select[role="heading"]');
+  for (var i = 0; i < interactiveHeadings.length; i++) {
+    var el = interactiveHeadings[i];
+    var text = el.textContent.replace(/\s+/g, " ").trim().substring(0, 50);
+    headingIssues.push({
+      type: "interactive_heading",
+      element: text || "(empty)",
+      message: "<" + el.tagName.toLowerCase() + "> with role=\"heading\" (interactive element)"
+    });
   }
 
   return {
@@ -260,6 +392,7 @@
     title: document.title,
     headingCount: headings.length,
     headingOutline: headingOutline,
+    headingIssues: headingIssues,
     markdown: lines.join("\n\n"),
   };
 })();
