@@ -16,6 +16,25 @@
       var s = window.getComputedStyle(el);
       if (s.display === "none" || s.visibility === "hidden") return false;
       if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
+
+      // Detect sr-only / visually-hidden patterns (screen-reader only)
+      if (s.position === "absolute") {
+        // clip: rect(0,0,0,0) or rect(1px,1px,1px,1px) pattern
+        var clip = s.clip;
+        if (clip && (clip.indexOf("rect(0") !== -1 || clip.indexOf("rect(1px") !== -1)) {
+          return false;
+        }
+        // clip-path: inset(50%) or inset(100%) pattern
+        var clipPath = s.clipPath;
+        if (clipPath && (clipPath.indexOf("inset(50%)") !== -1 || clipPath.indexOf("inset(100%)") !== -1)) {
+          return false;
+        }
+        // Off-screen positioning (left: -9999px, top: -9999px, etc.)
+        var left = parseInt(s.left, 10);
+        var top = parseInt(s.top, 10);
+        if (!isNaN(left) && left < -9000) return false;
+        if (!isNaN(top) && top < -9000) return false;
+      }
     } catch(e) { return false; }
     return true;
   }

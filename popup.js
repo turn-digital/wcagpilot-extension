@@ -28,6 +28,7 @@ let UI = {
     btn_dashboard: "Open Dashboard",
     btn_recheck: "Check another page",
     btn_details: "See how to fix it",
+    btn_details_pass: "View full report",
     btn_copy: "Copy result",
     btn_copied: "Copied!",
     loading_extract: "Reading headings...",
@@ -296,12 +297,13 @@ function showResult(data) {
     });
   }
 
-  // Hide "See how to fix it" button if everything passes (no issues to fix)
+  // Change button text based on result: "See how to fix it" vs "View full report"
   const detailsBtn = $("details-btn");
+  detailsBtn.classList.remove("hidden");
   if (compliant && !hasWarnings) {
-    detailsBtn.classList.add("hidden");
+    detailsBtn.textContent = UI.labels.btn_details_pass;
   } else {
-    detailsBtn.classList.remove("hidden");
+    detailsBtn.textContent = UI.labels.btn_details;
   }
 
   // Update limits if returned
@@ -336,7 +338,7 @@ function renderHistory(data) {
 
     const isPass = check.issues_count === 0;
     const badgeClass = isPass ? "history-badge history-badge-pass" : "history-badge history-badge-fail";
-    const badgeText = isPass ? "OK" : `${check.issues_count} issues`;
+    const badgeText = isPass ? "OK" : `${check.issues_count} ${check.issues_count === 1 ? "issue" : "issues"}`;
 
     div.innerHTML = `
       <span class="history-item-url">${escapeHtml(truncateUrl(check.url, 45))}</span>
@@ -533,7 +535,13 @@ $("get-more-link").addEventListener("click", (e) => {
 
 // Result screen
 $("result-back-btn").addEventListener("click", showHome);
-$("details-btn").addEventListener("click", openDashboardWithToken);
+$("details-btn").addEventListener("click", () => {
+  if (lastResult?.check_id) {
+    openCheckInDashboard(lastResult.check_id);
+  } else {
+    openDashboardWithToken();
+  }
+});
 $("recheck-btn").addEventListener("click", handleCheck);
 
 // History screen
