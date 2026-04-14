@@ -80,3 +80,37 @@ body {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #fff;
 }
+
+/* Language selector */
+.lang-selector {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.lang-select {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  border: 1px solid #c6cad0;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  min-width: 140px;
+}
+
+.lang-select:focus {
+  outline: 2px solid #66ba1e;
+  outline-offset: 2px;
+}
+
+.profile-lang-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  margin: 8px 0;
+  border-top: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 14px;
+  color: #374151;
+}

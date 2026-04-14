@@ -256,6 +256,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  // ========== LANGUAGE SYNC ==========
+
+  // Get language (for extension → app sync)
+  if (message.action === "getLang") {
+    chrome.storage.local.get(["lang"]).then((data) => {
+      sendResponse({ lang: data.lang || null });
+    }).catch(() => {
+      sendResponse({ lang: null });
+    });
+    return true;
+  }
+
+  // Set language (for app → extension sync)
+  if (message.action === "setLang") {
+    chrome.storage.local.set({ lang: message.lang }).then(() => {
+      sendResponse({ success: true });
+    }).catch(() => {
+      sendResponse({ success: false });
+    });
+    return true;
+  }
+
+  // Language changed from popup - notify app tabs
+  if (message.action === "languageChanged") {
+    chrome.storage.local.set({ lang: message.lang }).then(() => {
+      notifyAppTabsLanguageChange(message.lang);
+      sendResponse({ success: true });
+    }).catch(() => {
+      sendResponse({ success: false });
+    });
+    return true;
+  }
 });
 
 // =============================================
@@ -277,6 +310,22 @@ async function notifyAppTabsLogout() {
 
     for (const tab of tabs) {
       chrome.tabs.sendMessage(tab.id, { action: "logout" }).catch(() => {
+        // Tab might not have content script, ignore
+      });
+    }
+  } catch (err) {
+    // Ignore errors
+  }
+}
+
+async function notifyAppTabsLanguageChange(lang) {
+  try {
+    const tabs = await chrome.tabs.query({
+      url: ["https://wcagpilot.com/app/*", "http://localhost/app/*", "http://localhost:*/app/*"]
+    });
+
+    for (const tab of tabs) {
+      chrome.tabs.sendMessage(tab.id, { action: "languageChanged", lang }).catch(() => {
         // Tab might not have content script, ignore
       });
     }

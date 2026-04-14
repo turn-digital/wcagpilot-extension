@@ -1,4 +1,4 @@
-// sync-auth.js — Content script that syncs auth between web app and extension
+// sync-auth.js — Content script that syncs auth and language between web app and extension
 // This runs on wcagpilot.com/app/* pages
 
 (function() {
@@ -6,10 +6,14 @@
   if (window.__wcagpilot_sync_done) return;
   window.__wcagpilot_sync_done = true;
 
+  const LANG_STORAGE_KEY = 'wcagpilot_lang';
+
   // Track if app had auth (to detect logout vs never-logged-in)
   let appHadAuth = false;
   // Track if we synced from extension (to prevent logout loop)
   let syncedFromExtension = false;
+  // Track if language was synced from extension (to prevent sync loop)
+  let langSyncedFromExtension = false;
 
   // Sync FROM app TO extension
   function syncAuthToExtension(isLogout = false) {
@@ -139,4 +143,68 @@
     const isLogout = appHadAuth && !hasAuth;
     syncAuthToExtension(isLogout);
   });
+
+  // ========== LANGUAGE SYNC ==========
+
+  // Sync language FROM extension TO app
+  function syncLangFromExtension() {
+    try {
+      chrome.runtime.sendMessage({ action: "getLang" }, (response) => {
+        if (chrome.runtime.lastError) return;
+
+        if (response?.lang) {
+          const appLang = localStorage.getItem(LANG_STORAGE_KEY);
+          if (response.lang !== appLang) {
+            langSyncedFromExtension = true;
+            localStorage.setItem(LANG_STORAGE_KEY, response.lang);
+            // Notify React app about language change
+            window.dispatchEvent(new CustomEvent("wcagpilot:lang-from-extension", {
+              detail: { lang: response.lang }
+            }));
+          }
+        }
+      });
+    } catch (err) {
+      // Ignore errors
+    }
+  }
+
+  // Sync language FROM app TO extension
+  function syncLangToExtension(lang) {
+    if (langSyncedFromExtension) {
+      langSyncedFromExtension = false;
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage({ action: "setLang", lang }, () => {
+        if (chrome.runtime.lastError) return;
+      });
+    } catch (err) {
+      // Ignore errors
+    }
+  }
+
+  // Listen for language change from extension
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === "languageChanged") {
+      langSyncedFromExtension = true;
+      localStorage.setItem(LANG_STORAGE_KEY, message.lang);
+      window.dispatchEvent(new CustomEvent("wcagpilot:lang-from-extension", {
+        detail: { lang: message.lang }
+      }));
+      sendResponse({ success: true });
+    }
+    return false;
+  });
+
+  // Listen for language change event from web app
+  window.addEventListener("wcagpilot:lang-changed", (e) => {
+    const lang = e.detail?.lang || localStorage.getItem(LANG_STORAGE_KEY);
+    if (lang) {
+      syncLangToExtension(lang);
+    }
+  });
+
+  // Sync language on page load (extension → app)
+  syncLangFromExtension();
 })();
