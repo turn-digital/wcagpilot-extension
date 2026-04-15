@@ -57,7 +57,7 @@ async function loadUIFromServer() {
         setupLanguagePickers();
 
         // Apply translations to new elements
-        I18N.applyToDocument();
+        I18N.applyTranslations();
       }
 
       // Update dashboard URL
