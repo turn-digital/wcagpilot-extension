@@ -28,21 +28,55 @@ async function loadUIFromServer() {
         document.head.appendChild(style);
       }
 
+      // Inject HTML templates into sections
+      if (data.html) {
+        const sectionMapping = {
+          login: 'login-section',
+          onboard: 'onboard-section',
+          home: 'home-section',
+          result: 'result-section',
+          history: 'history-section',
+          profile: 'profile-section',
+          limit: 'limit-section',
+          error: 'error-section'
+        };
+
+        for (const [key, sectionId] of Object.entries(sectionMapping)) {
+          if (data.html[key]) {
+            const section = document.getElementById(sectionId);
+            if (section) {
+              section.innerHTML = data.html[key];
+            }
+          }
+        }
+
+        // Setup event listeners after HTML is injected
+        setupEventListeners();
+
+        // Setup language pickers (they're in the new HTML)
+        setupLanguagePickers();
+
+        // Apply translations to new elements
+        I18N.applyToDocument();
+      }
+
       // Update dashboard URL
       if (data.dashboard_url) {
         UI.dashboard_url = data.dashboard_url;
       }
+
+      return true;
     }
   } catch (err) {
-    // Failed to load UI from server, using defaults
+    console.error('Failed to load UI from server:', err);
   }
+  return false;
 }
 
 // ============================================================
 // Refresh dynamic UI elements after language change
 // ============================================================
 function refreshDynamicUI() {
-  // Refresh plan label in profile
   if (currentUser) {
     const plan = currentUser.plan || "free";
     const planEl = $("profile-plan");
@@ -50,8 +84,6 @@ function refreshDynamicUI() {
       planEl.textContent = plan === "pro" ? t('ui.plan_pro') : t('ui.plan_free');
     }
   }
-
-  // Refresh limits text if visible
   if (currentLimits) {
     updateLimits(currentLimits);
   }
@@ -63,7 +95,6 @@ function refreshDynamicUI() {
 function setupLanguagePickers() {
   const selects = document.querySelectorAll('.lang-select');
   selects.forEach(select => {
-    // Clear and populate
     select.innerHTML = '';
     I18N.available.forEach(lang => {
       const option = document.createElement('option');
@@ -75,14 +106,11 @@ function setupLanguagePickers() {
       select.appendChild(option);
     });
 
-    // Handle change
     select.addEventListener('change', async (e) => {
       await I18N.setLanguage(e.target.value);
-      // Update all selects to match
       document.querySelectorAll('.lang-select').forEach(s => {
         s.value = I18N.lang;
       });
-      // Refresh dynamic UI elements (plan label, etc.)
       refreshDynamicUI();
     });
   });
@@ -123,7 +151,6 @@ function showSection(name) {
   if (sections[name]) {
     sections[name].classList.remove("hidden");
   } else {
-    // Section not found - fallback to login section
     if (sections.login) sections.login.classList.remove("hidden");
   }
 }
@@ -142,7 +169,6 @@ function initOnboarding() {
   if (nextBtn) {
     nextBtn.addEventListener("click", () => {
       if (onboardSlide < ONBOARD_TOTAL) {
-        // Hide current slide
         const currentSlideEl = document.querySelector(`[data-slide="${onboardSlide}"]`);
         const currentDotEl = document.querySelector(`[data-dot="${onboardSlide}"]`);
         if (currentSlideEl) currentSlideEl.classList.add("hidden");
@@ -150,20 +176,17 @@ function initOnboarding() {
 
         onboardSlide++;
 
-        // Show next slide
         const nextSlideEl = document.querySelector(`[data-slide="${onboardSlide}"]`);
         const nextDotEl = document.querySelector(`[data-dot="${onboardSlide}"]`);
         if (nextSlideEl) nextSlideEl.classList.remove("hidden");
         if (nextDotEl) nextDotEl.classList.add("active");
 
-        // Update button text on last slide
         if (onboardSlide === ONBOARD_TOTAL) {
           nextBtn.textContent = "Get started";
           const skipWrap = document.querySelector(".onboard-skip");
           if (skipWrap) skipWrap.style.display = "none";
         }
       } else {
-        // Finish onboarding
         finishOnboarding();
       }
     });
@@ -190,29 +213,26 @@ function shouldShowOnboarding() {
 // Home screen
 // ============================================================
 async function showHome() {
-  // Update profile initial
   if (currentUser) {
     const initial = (currentUser.name || currentUser.email || "?").charAt(0).toUpperCase();
     const profileInitial = $("profile-initial");
-    const loadingProfileInitial = $("loading-profile-initial");
     if (profileInitial) profileInitial.textContent = initial;
-    if (loadingProfileInitial) loadingProfileInitial.textContent = initial;
   }
 
-  // Update limits
   if (currentLimits) {
     updateLimits(currentLimits);
   }
 
-  // Get current tab URL
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab?.url) {
       currentUrl = tab.url;
-      $("current-url").textContent = tab.url;
+      const urlEl = $("current-url");
+      if (urlEl) urlEl.textContent = tab.url;
     }
   } catch (err) {
-    $("current-url").textContent = "Unable to get current page";
+    const urlEl = $("current-url");
+    if (urlEl) urlEl.textContent = "Unable to get current page";
   }
 
   showSection("home");
@@ -224,14 +244,13 @@ function updateLimits(limits) {
   const total = limits.limit || 20;
   const percent = Math.round((used / total) * 100);
 
-  $("limits-text").textContent = `${used} / ${total} checks`;
-  $("limits-progress").style.width = percent + "%";
+  const limitsText = $("limits-text");
+  const limitsProgress = $("limits-progress");
 
-  // Change color when limit reached
-  if (used >= total) {
-    $("limits-progress").style.background = "#8b1a0e";
-  } else {
-    $("limits-progress").style.background = "#66ba1e";
+  if (limitsText) limitsText.textContent = `${used} / ${total} checks`;
+  if (limitsProgress) {
+    limitsProgress.style.width = percent + "%";
+    limitsProgress.style.background = used >= total ? "#8b1a0e" : "#66ba1e";
   }
 }
 
@@ -240,10 +259,14 @@ function updateLimits(limits) {
 // ============================================================
 function showProfile() {
   if (currentUser) {
-    $("profile-name").textContent = currentUser.name || currentUser.email || "";
-    $("profile-email").textContent = currentUser.email || "";
-    const plan = currentUser.plan || "free";
+    const nameEl = $("profile-name");
+    const emailEl = $("profile-email");
     const planEl = $("profile-plan");
+
+    if (nameEl) nameEl.textContent = currentUser.name || currentUser.email || "";
+    if (emailEl) emailEl.textContent = currentUser.email || "";
+
+    const plan = currentUser.plan || "free";
     if (planEl) {
       planEl.textContent = plan === "pro" ? t('ui.plan_pro') : t('ui.plan_free');
       planEl.className = "profile-plan" + (plan === "pro" ? " profile-plan-pro" : "");
@@ -258,74 +281,71 @@ function showProfile() {
 function showResult(data) {
   lastResult = data;
 
-  // Update URL
-  $("result-url").textContent = currentUrl;
+  const resultUrl = $("result-url");
+  if (resultUrl) resultUrl.textContent = currentUrl;
 
-  // Determine compliance: only "fail" causes non-compliance
   const compliant = Array.isArray(data.checks) && data.checks.every((c) => c.status !== "fail");
   const hasWarnings = Array.isArray(data.checks) && data.checks.some((c) => c.status === "warning");
 
-  // Update verdict box
   const verdictBox = $("verdict-box");
   const verdictTitle = $("verdict-title");
   const verdictSummary = $("verdict-summary");
 
-  if (compliant && !hasWarnings) {
-    verdictBox.className = "verdict-box verdict-pass";
-    verdictTitle.textContent = t('verdicts.pass_short');
-  } else if (compliant && hasWarnings) {
-    verdictBox.className = "verdict-box verdict-warning";
-    verdictTitle.textContent = t('verdicts.warning_short');
-  } else {
-    verdictBox.className = "verdict-box verdict-fail";
-    verdictTitle.textContent = t('verdicts.fail_short');
+  if (verdictBox && verdictTitle) {
+    if (compliant && !hasWarnings) {
+      verdictBox.className = "verdict-box verdict-pass";
+      verdictTitle.textContent = t('verdicts.pass_short');
+    } else if (compliant && hasWarnings) {
+      verdictBox.className = "verdict-box verdict-warning";
+      verdictTitle.textContent = t('verdicts.warning_short');
+    } else {
+      verdictBox.className = "verdict-box verdict-fail";
+      verdictTitle.textContent = t('verdicts.fail_short');
+    }
   }
 
-  verdictSummary.textContent = data.summary || "";
+  if (verdictSummary) verdictSummary.textContent = data.summary || "";
 
-  // Build checks list
   const checksList = $("checks-list");
-  checksList.innerHTML = "";
+  if (checksList) {
+    checksList.innerHTML = "";
 
-  if (data.checks && data.checks.length > 0) {
-    data.checks.forEach((check) => {
-      const div = document.createElement("div");
-      div.className = "check-item";
+    if (data.checks && data.checks.length > 0) {
+      data.checks.forEach((check) => {
+        const div = document.createElement("div");
+        div.className = "check-item";
 
-      let icon, iconClass, labelClass;
-      if (check.status === "pass") {
-        icon = "✓";
-        iconClass = "check-icon check-icon-pass";
-        labelClass = "check-label";
-      } else if (check.status === "warning") {
-        icon = "⚠";
-        iconClass = "check-icon check-icon-warning";
-        labelClass = "check-label check-label-warning";
-      } else {
-        icon = "✗";
-        iconClass = "check-icon check-icon-fail";
-        labelClass = "check-label check-label-fail";
-      }
-      const label = checkLabel(check.id);
+        let icon, iconClass, labelClass;
+        if (check.status === "pass") {
+          icon = "✓";
+          iconClass = "check-icon check-icon-pass";
+          labelClass = "check-label";
+        } else if (check.status === "warning") {
+          icon = "⚠";
+          iconClass = "check-icon check-icon-warning";
+          labelClass = "check-label check-label-warning";
+        } else {
+          icon = "✗";
+          iconClass = "check-icon check-icon-fail";
+          labelClass = "check-label check-label-fail";
+        }
+        const label = checkLabel(check.id);
 
-      div.innerHTML = `
-        <span class="${iconClass}">${icon}</span>
-        <span class="${labelClass}">${escapeHtml(label)}</span>
-      `;
-      checksList.appendChild(div);
-    });
+        div.innerHTML = `
+          <span class="${iconClass}">${icon}</span>
+          <span class="${labelClass}">${escapeHtml(label)}</span>
+        `;
+        checksList.appendChild(div);
+      });
+    }
   }
 
-  // Change button text based on result: "See how to fix it" vs "View full report"
   const detailsBtn = $("details-btn");
-  detailsBtn.classList.remove("hidden");
-  if (compliant && !hasWarnings) {
-    detailsBtn.textContent = t('ui.btn_details_pass');
-  } else {
-    detailsBtn.textContent = t('ui.btn_details');
+  if (detailsBtn) {
+    detailsBtn.classList.remove("hidden");
+    detailsBtn.textContent = (compliant && !hasWarnings) ? t('ui.btn_details_pass') : t('ui.btn_details');
   }
 
-  // Update limits if returned
   if (data.limits) {
     updateLimits(data.limits);
   }
@@ -342,6 +362,8 @@ function checkLabel(id) {
 // ============================================================
 function renderHistory(data) {
   const list = $("history-list");
+  if (!list) return;
+
   list.innerHTML = "";
 
   if (!data.checks || data.checks.length === 0) {
@@ -366,7 +388,6 @@ function renderHistory(data) {
       </span>
     `;
 
-    // Click to open in dashboard
     div.addEventListener("click", () => {
       openCheckInDashboard(check.id);
     });
@@ -377,21 +398,14 @@ function renderHistory(data) {
   showSection("history");
 }
 
-/** Truncate URL showing start and end */
 function truncateUrl(url, maxLength) {
   if (!url || url.length <= maxLength) return url;
-
-  // Remove protocol for display
   let display = url.replace(/^https?:\/\//, "");
-
   if (display.length <= maxLength) return display;
-
-  // Show start...end
   const keepChars = Math.floor((maxLength - 3) / 2);
   return display.slice(0, keepChars) + "..." + display.slice(-keepChars);
 }
 
-/** Open specific check in dashboard */
 function openCheckInDashboard(checkId) {
   chrome.storage.local.get(["auth"], (data) => {
     let url = UI.dashboard_url + "?id=" + checkId;
@@ -403,7 +417,6 @@ function openCheckInDashboard(checkId) {
 }
 
 function formatDate(dateStr) {
-  // Server returns UTC dates without 'Z' suffix - add it if missing
   const normalized = dateStr.endsWith("Z") || dateStr.includes("+") ? dateStr : dateStr + "Z";
   const date = new Date(normalized);
   const now = new Date();
@@ -421,7 +434,8 @@ function formatDate(dateStr) {
 // Error & Limit screens
 // ============================================================
 function showError(message) {
-  $("error-message").textContent = message;
+  const errorMsg = $("error-message");
+  if (errorMsg) errorMsg.textContent = message;
   showSection("error");
 }
 
@@ -429,7 +443,8 @@ function showLimitReached(limits) {
   const resetDate = limits.resets_at
     ? new Date(limits.resets_at).toLocaleDateString(I18N.lang, { month: "long", day: "numeric", year: "numeric" })
     : "next month";
-  $("limit-info").textContent = t('ui.limit_info', { used: limits.used, limit: limits.limit, date: resetDate });
+  const limitInfo = $("limit-info");
+  if (limitInfo) limitInfo.textContent = t('ui.limit_info', { used: limits.used, limit: limits.limit, date: resetDate });
   showSection("limit");
 }
 
@@ -460,7 +475,8 @@ async function openDashboardWithToken() {
 async function handleCheck() {
   try {
     showSection("loading");
-    $("loading-text").textContent = t('ui.loading_extract');
+    const loadingText = $("loading-text");
+    if (loadingText) loadingText.textContent = t('ui.loading_extract');
 
     const headings = await extractFromActiveTab();
 
@@ -469,9 +485,8 @@ async function handleCheck() {
       return;
     }
 
-    $("loading-text").textContent = t('ui.loading_analyze');
+    if (loadingText) loadingText.textContent = t('ui.loading_analyze');
 
-    // Send to server with language for Gemini summaries
     const geminiLang = I18N.strings?.gemini_language || 'English';
     const result = await checkPage(headings, geminiLang);
 
@@ -498,7 +513,8 @@ async function handleCheck() {
 async function handleHistory() {
   try {
     showSection("loading");
-    $("loading-text").textContent = "Loading history...";
+    const loadingText = $("loading-text");
+    if (loadingText) loadingText.textContent = "Loading history...";
     const data = await getHistory();
     renderHistory(data);
   } catch (err) {
@@ -507,104 +523,124 @@ async function handleHistory() {
 }
 
 // ============================================================
-// Event listeners
+// Event listeners setup (called after HTML is loaded from server)
 // ============================================================
+function setupEventListeners() {
+  const googleBtn = $("google-btn");
+  const emailLoginBtn = $("email-login-btn");
 
-// Login buttons
-$("google-btn").addEventListener("click", async () => {
-  $("google-btn").disabled = true;
-  try {
-    const response = await chrome.runtime.sendMessage({ action: "login", provider: "google" });
-    if (response?.success) {
-      currentUser = response.data?.user;
-      currentLimits = response.data?.limits;
+  if (googleBtn) {
+    googleBtn.addEventListener("click", async () => {
+      googleBtn.disabled = true;
+      try {
+        const response = await chrome.runtime.sendMessage({ action: "login", provider: "google" });
+        if (response?.success) {
+          currentUser = response.data?.user;
+          currentLimits = response.data?.limits;
 
-      // Check if should show onboarding
-      if (shouldShowOnboarding()) {
-        showSection("onboard");
-      } else {
-        await showHome();
+          if (shouldShowOnboarding()) {
+            showSection("onboard");
+          } else {
+            await showHome();
+          }
+        } else {
+          showError(response?.error || "Login failed");
+        }
+      } catch (err) {
+        showError(err?.message || "Login failed");
+      } finally {
+        googleBtn.disabled = false;
       }
-    } else {
-      showError(response?.error || "Login failed");
-    }
-  } catch (err) {
-    showError(err?.message || "Login failed");
-  } finally {
-    $("google-btn").disabled = false;
+    });
   }
-});
 
-$("email-login-btn").addEventListener("click", () => {
-  const url = UI.dashboard_url + (UI.dashboard_url.includes("?") ? "&" : "?") + "login=email";
-  chrome.tabs.create({ url });
-});
-
-// Home screen
-$("check-btn").addEventListener("click", handleCheck);
-$("history-link").addEventListener("click", (e) => {
-  e.preventDefault();
-  handleHistory();
-});
-$("profile-btn").addEventListener("click", showProfile);
-$("get-more-link").addEventListener("click", (e) => {
-  e.preventDefault();
-  openDashboardWithToken();
-});
-
-// Result screen
-$("result-back-btn").addEventListener("click", showHome);
-$("details-btn").addEventListener("click", () => {
-  if (lastResult?.check_id) {
-    openCheckInDashboard(lastResult.check_id);
-  } else {
-    openDashboardWithToken();
+  if (emailLoginBtn) {
+    emailLoginBtn.addEventListener("click", () => {
+      const url = UI.dashboard_url + (UI.dashboard_url.includes("?") ? "&" : "?") + "login=email";
+      chrome.tabs.create({ url });
+    });
   }
-});
 
-// History screen
-$("history-back-btn").addEventListener("click", showHome);
+  const checkBtn = $("check-btn");
+  const historyLink = $("history-link");
+  const profileBtn = $("profile-btn");
+  const getMoreLink = $("get-more-link");
 
-// Profile screen
-$("profile-back-btn").addEventListener("click", showHome);
-$("dashboard-btn").addEventListener("click", openDashboardWithToken);
-$("logout-btn").addEventListener("click", async () => {
-  await chrome.storage.local.remove(["auth"]);
-  currentUser = null;
-  currentLimits = null;
-  showSection("login");
-});
+  if (checkBtn) checkBtn.addEventListener("click", handleCheck);
+  if (historyLink) {
+    historyLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      handleHistory();
+    });
+  }
+  if (profileBtn) profileBtn.addEventListener("click", showProfile);
+  if (getMoreLink) {
+    getMoreLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      openDashboardWithToken();
+    });
+  }
 
-// Limit screen
-$("limit-back-btn").addEventListener("click", showHome);
-$("upgrade-btn").addEventListener("click", openDashboardWithToken);
+  const resultBackBtn = $("result-back-btn");
+  const detailsBtn = $("details-btn");
 
-// Error screen
-$("error-back-btn").addEventListener("click", showHome);
-$("error-retry-btn").addEventListener("click", handleCheck);
+  if (resultBackBtn) resultBackBtn.addEventListener("click", showHome);
+  if (detailsBtn) {
+    detailsBtn.addEventListener("click", () => {
+      if (lastResult?.check_id) {
+        openCheckInDashboard(lastResult.check_id);
+      } else {
+        openDashboardWithToken();
+      }
+    });
+  }
 
-// Initialize onboarding
-initOnboarding();
+  const historyBackBtn = $("history-back-btn");
+  if (historyBackBtn) historyBackBtn.addEventListener("click", showHome);
+
+  const profileBackBtn = $("profile-back-btn");
+  const dashboardBtn = $("dashboard-btn");
+  const logoutBtn = $("logout-btn");
+
+  if (profileBackBtn) profileBackBtn.addEventListener("click", showHome);
+  if (dashboardBtn) dashboardBtn.addEventListener("click", openDashboardWithToken);
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      await chrome.storage.local.remove(["auth"]);
+      currentUser = null;
+      currentLimits = null;
+      showSection("login");
+    });
+  }
+
+  const limitBackBtn = $("limit-back-btn");
+  const upgradeBtn = $("upgrade-btn");
+
+  if (limitBackBtn) limitBackBtn.addEventListener("click", showHome);
+  if (upgradeBtn) upgradeBtn.addEventListener("click", openDashboardWithToken);
+
+  const errorBackBtn = $("error-back-btn");
+  const errorRetryBtn = $("error-retry-btn");
+
+  if (errorBackBtn) errorBackBtn.addEventListener("click", showHome);
+  if (errorRetryBtn) errorRetryBtn.addEventListener("click", handleCheck);
+
+  initOnboarding();
+}
 
 // ============================================================
 // Startup
 // ============================================================
 (async () => {
   try {
-    // Initialize i18n first (loads translations)
     await I18N.init();
 
-    // Setup language pickers
-    setupLanguagePickers();
+    const loadingText = $("loading-text");
+    if (loadingText) loadingText.textContent = t('ui.loading');
 
-    // Show loading state while checking auth
-    $("loading-text").textContent = t('ui.loading');
-
-    // Check storage first (fast, no network)
     const data = await chrome.storage.local.get(["auth"]);
 
-    // Load UI from server (don't block on this)
-    loadUIFromServer();
+    await loadUIFromServer();
 
     if (data.auth?.token) {
       try {
@@ -612,7 +648,6 @@ initOnboarding();
         currentUser = result.user;
         currentLimits = result.limits;
 
-        // Check if should show onboarding
         if (shouldShowOnboarding()) {
           showSection("onboard");
         } else {
@@ -620,12 +655,10 @@ initOnboarding();
         }
       } catch (err) {
         const errMsg = err?.message || String(err);
-        // Only clear auth if it's a 401 (invalid token), not network errors
         if (errMsg.includes("401") || errMsg.includes("Session expired")) {
           await chrome.storage.local.remove(["auth"]);
           showSection("login");
         } else {
-          // Network error - show home with cached data
           currentUser = data.auth.user;
           showHome();
         }
@@ -634,7 +667,6 @@ initOnboarding();
       showSection("login");
     }
   } catch (startupErr) {
-    // Catch-all: if anything fails during startup, show login
     showSection("login");
   }
 })();
