@@ -34,7 +34,7 @@
       </div>
 
       <!-- Subtitle -->
-      <p class="login-subtitle">Check if your headings meet WCAG and learn how to improve them</p>
+      <p class="login-subtitle" data-i18n="ui.login_subtitle">Check if your headings meet WCAG and learn how to improve them</p>
 
       <!-- Auth buttons -->
       <div class="auth-buttons">
@@ -45,19 +45,24 @@
             <path d="M5.26 11.34a4.8 4.8 0 0 1 0-3.07V6.2H2.58a8 8 0 0 0 0 7.18l2.68-2.04z" fill="#FBBC05"/>
             <path d="M10 4.98a4.33 4.33 0 0 1 3.07 1.2l2.3-2.3A7.7 7.7 0 0 0 10 2a8 8 0 0 0-7.42 4.97l2.68 2.07A4.77 4.77 0 0 1 10 4.98z" fill="#EA4335"/>
           </svg>
-          Sign in with Google
+          <span data-i18n="ui.btn_login_google">Sign in with Google</span>
         </button>
         <button id="email-login-btn" class="btn btn-outline" type="button">
           <svg class="btn-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <rect x="2" y="4" width="16" height="12" rx="2" stroke="#1A1A2E" stroke-width="1.5" fill="none"/>
             <polyline points="2,4 10,11 18,4" stroke="#1A1A2E" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          Sign in with email
+          <span data-i18n="ui.btn_login_email">Sign in with email</span>
         </button>
       </div>
 
       <!-- Footer -->
-      <p class="login-footer">Free &middot; 20 checks/month</p>
+      <p class="login-footer" data-i18n="ui.login_benefits">Free · 20 checks/month</p>
+
+      <!-- Language selector -->
+      <div class="lang-selector">
+        <select id="login-lang-select" class="lang-select" aria-label="Language"></select>
+      </div>
     </div>
   </section>
 
@@ -74,8 +79,8 @@
             </svg>
           </div>
         </div>
-        <p class="onboard-step">Step 1 of 3</p>
-        <p class="onboard-title">Open the page you want to check</p>
+        <p class="onboard-step" data-onboard-step="1"></p>
+        <p class="onboard-title" data-i18n="ui.onboard_1">Open the page you want to check</p>
       </div>
 
       <!-- Slide 2 -->
@@ -87,8 +92,8 @@
             </svg>
           </div>
         </div>
-        <p class="onboard-step">Step 2 of 3</p>
-        <p class="onboard-title">Get a clear answer — does it meet WCAG?</p>
+        <p class="onboard-step" data-onboard-step="2"></p>
+        <p class="onboard-title" data-i18n="ui.onboard_2">Get a clear answer — does it meet WCAG?</p>
       </div>
 
       <!-- Slide 3 -->
@@ -101,8 +106,8 @@
             </svg>
           </div>
         </div>
-        <p class="onboard-step">Step 3 of 3</p>
-        <p class="onboard-title">Send the results to your developer</p>
+        <p class="onboard-step" data-onboard-step="3"></p>
+        <p class="onboard-title" data-i18n="ui.onboard_3">Send the results to your developer</p>
       </div>
 
       <!-- Dot indicator -->
@@ -113,10 +118,10 @@
       </div>
 
       <!-- Next / Get started button -->
-      <button id="onboard-next-btn" class="btn btn-primary" type="button">Next</button>
+      <button id="onboard-next-btn" class="btn btn-primary" type="button" data-i18n="ui.onboard_next">Next</button>
 
       <!-- Skip link -->
-      <p class="onboard-skip"><a href="#" id="onboard-skip-btn" class="text-link">Skip</a></p>
+      <p class="onboard-skip"><a href="#" id="onboard-skip-btn" class="text-link" data-i18n="ui.onboard_skip">Skip</a></p>
     </div>
   </section>
 
@@ -140,17 +145,17 @@
 
     <div class="home-content">
       <!-- Active page context -->
-      <p class="overline">Current page</p>
+      <p class="overline" data-i18n="ui.current_page">Current page</p>
       <p id="current-url" class="current-url">Loading...</p>
 
       <!-- Primary button -->
-      <button id="check-btn" class="btn btn-primary" type="button">Check this page</button>
+      <button id="check-btn" class="btn btn-primary" type="button" data-i18n="ui.btn_check">Check this page</button>
 
       <!-- Progress bar -->
       <div class="progress-wrapper">
         <div class="progress-row">
           <span id="limits-text" class="progress-label">0 / 20 checks</span>
-          <a href="#" id="get-more-link" class="progress-link">Get more</a>
+          <a href="#" id="get-more-link" class="progress-link" data-i18n="ui.get_more">Get more</a>
         </div>
         <div class="progress-track">
           <div id="limits-progress" class="progress-fill"></div>
@@ -158,7 +163,7 @@
       </div>
 
       <!-- History link -->
-      <p class="history-link-wrap"><a href="#" id="history-link" class="text-link">View history</a></p>
+      <p class="history-link-wrap"><a href="#" id="history-link" class="text-link" data-i18n="ui.view_history">View history</a></p>
 
       <!-- Teaser -->
       <div class="teaser">
@@ -168,7 +173,7 @@
           <rect x="12" y="28" width="32" height="8" rx="4" fill="#636B74"/>
           <rect x="12" y="42" width="24" height="8" rx="4" fill="#2D7A0E"/>
         </svg>
-        <span>Full WCAG audit — Coming soon</span>
+        <span data-i18n="ui.teaser">Full WCAG audit — Coming soon</span>
       </div>
     </div>
   </section>
@@ -193,9 +198,9 @@
 
     <div class="loading-content">
       <div class="spinner" role="status" aria-label="Analyzing"></div>
-      <p class="loading-title" id="loading-text">Analyzing heading structure...</p>
-      <p class="loading-hint">Usually takes 10–30 seconds</p>
-      <p class="loading-warning">Do not close this window</p>
+      <p class="loading-title" id="loading-text" data-i18n="ui.loading">Analyzing...</p>
+      <p class="loading-hint" data-i18n="ui.loading_hint">Usually takes 10–30 seconds</p>
+      <p class="loading-warning" data-i18n="ui.loading_warning">Do not close this window</p>
     </div>
   </section>
 
@@ -204,7 +209,7 @@
     <!-- Topbar with back -->
     <div class="topbar">
       <button id="result-back-btn" class="back-link" aria-label="Back">
-        <span aria-hidden="true">←</span> Back
+        <span aria-hidden="true">←</span> <span data-i18n="ui.back">Back</span>
       </button>
       <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
         <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
@@ -216,7 +221,7 @@
 
     <div class="result-content">
       <!-- Checked page -->
-      <p class="overline">Checked page</p>
+      <p class="overline" data-i18n="ui.checked_page">Checked page</p>
       <p id="result-url" class="current-url"></p>
 
       <!-- Verdict box -->
@@ -230,7 +235,7 @@
 
       <!-- Actions -->
       <div class="result-actions">
-        <button id="details-btn" class="btn btn-primary" type="button">See how to fix it</button>
+        <button id="details-btn" class="btn btn-primary" type="button" data-i18n="ui.btn_details">See how to fix it</button>
       </div>
     </div>
   </section>
@@ -240,7 +245,7 @@
     <!-- Topbar with back -->
     <div class="topbar">
       <button id="history-back-btn" class="back-link" aria-label="Back">
-        <span aria-hidden="true">←</span> Back
+        <span aria-hidden="true">←</span> <span data-i18n="ui.back">Back</span>
       </button>
       <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
         <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
@@ -251,7 +256,7 @@
     </div>
 
     <div class="history-content">
-      <h2 class="section-title">History</h2>
+      <h2 class="section-title" data-i18n="history.title">History</h2>
       <div id="history-list" class="history-list"></div>
     </div>
   </section>
@@ -261,7 +266,7 @@
     <!-- Topbar with back -->
     <div class="topbar">
       <button id="profile-back-btn" class="back-link" aria-label="Back">
-        <span aria-hidden="true">←</span> Back
+        <span aria-hidden="true">←</span> <span data-i18n="ui.back">Back</span>
       </button>
       <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
         <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
@@ -272,14 +277,18 @@
     </div>
 
     <div class="profile-content">
-      <h2 class="section-title">Account</h2>
+      <h2 class="section-title" data-i18n="ui.account">Account</h2>
       <div class="profile-info-box">
         <p id="profile-name" class="profile-name"></p>
         <p id="profile-email" class="profile-email"></p>
         <p id="profile-plan" class="profile-plan"></p>
       </div>
-      <button id="dashboard-btn" class="btn btn-outline" type="button">Open Dashboard</button>
-      <button id="logout-btn" class="btn btn-secondary" type="button">Sign out</button>
+      <div class="profile-lang-row">
+        <span data-i18n="ui.language">Language</span>
+        <select id="profile-lang-select" class="lang-select" aria-label="Language"></select>
+      </div>
+      <button id="dashboard-btn" class="btn btn-outline" type="button" data-i18n="ui.btn_dashboard">Open Dashboard</button>
+      <button id="logout-btn" class="btn btn-secondary" type="button" data-i18n="ui.btn_logout">Sign out</button>
     </div>
   </section>
 
@@ -287,7 +296,7 @@
   <section id="limit-section" class="section hidden">
     <div class="topbar">
       <button id="limit-back-btn" class="back-link" aria-label="Back">
-        <span aria-hidden="true">←</span> Back
+        <span aria-hidden="true">←</span> <span data-i18n="ui.back">Back</span>
       </button>
       <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
         <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
@@ -299,9 +308,9 @@
 
     <div class="limit-content">
       <div class="limit-icon">🚫</div>
-      <h2 class="limit-title">Monthly limit reached</h2>
+      <h2 class="limit-title" data-i18n="ui.limit_reached">Monthly limit reached</h2>
       <p id="limit-info" class="limit-info"></p>
-      <button id="upgrade-btn" class="btn btn-primary" type="button">Get more checks</button>
+      <button id="upgrade-btn" class="btn btn-primary" type="button" data-i18n="ui.get_more_checks">Get more checks</button>
     </div>
   </section>
 
@@ -309,7 +318,7 @@
   <section id="error-section" class="section hidden">
     <div class="topbar">
       <button id="error-back-btn" class="back-link" aria-label="Back">
-        <span aria-hidden="true">←</span> Back
+        <span aria-hidden="true">←</span> <span data-i18n="ui.back">Back</span>
       </button>
       <svg class="logo-sm" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
         <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
@@ -322,11 +331,12 @@
     <div class="error-content">
       <div class="error-icon">⚠️</div>
       <p id="error-message" class="error-message"></p>
-      <button id="error-retry-btn" class="btn btn-primary" type="button">Try again</button>
+      <button id="error-retry-btn" class="btn btn-primary" type="button" data-i18n="ui.try_again">Try again</button>
     </div>
   </section>
 
   <script src="config.js"></script>
+  <script src="i18n.js"></script>
   <script src="api.js"></script>
   <script src="popup.js"></script>
 </body>

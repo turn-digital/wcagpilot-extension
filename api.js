@@ -148,10 +148,15 @@ async function logout() {
   await chrome.storage.local.remove(["auth"]);
 }
 
-async function checkPage(headingsData) {
+async function checkPage(headingsData, language) {
+  // Add language for Gemini summaries
+  const payload = { ...headingsData };
+  if (language) {
+    payload.language = language;
+  }
   return workerFetch("/api/check", {
     method: "POST",
-    body: JSON.stringify(headingsData),
+    body: JSON.stringify(payload),
   });
 }
 

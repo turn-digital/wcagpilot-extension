@@ -1,41 +1,16 @@
 // popup.js — WCAGpilot Extension UI
 // All API/auth functions are in api.js (loaded before this file)
+// i18n.js provides I18N object for translations
 
 // ============================================================
-// Server-driven UI — labels and config loaded from worker
+// Translation helper - shorthand for I18N.t()
+// ============================================================
+const t = (key, params) => I18N.t(key, params);
+
+// ============================================================
+// UI configuration
 // ============================================================
 let UI = {
-  labels: {
-    // Algorithmic checks (1-4)
-    check_presence: "Headings are present",
-    check_h1_first: "Main heading is H1",
-    check_hierarchy: "No heading levels skipped",
-    check_empty_headings: "No empty headings",
-    // LLM checks (5-7)
-    check_visual_headings: "Prominent text marked as heading",
-    check_content_match: "Content matches headings",
-    check_logical_structure: "Structure is logical",
-    // Legacy IDs
-    check_semantic_quality: "Semantic quality",
-    check_visual_match: "Visual match",
-    check_language_quality: "Headings are descriptive",
-    // UI labels
-    badge_pass: "✓ Passed",
-    badge_warning: "⚠ Review needed",
-    badge_fail: "✗ Failed",
-    btn_check: "Check this page",
-    btn_history: "View history",
-    btn_dashboard: "Open Dashboard",
-    btn_details: "See how to fix it",
-    btn_details_pass: "View full report",
-    btn_copy: "Copy result",
-    btn_copied: "Copied!",
-    loading_extract: "Reading headings...",
-    loading_analyze: "Analyzing heading structure...",
-    loading_hint: "Usually takes 10–30 seconds",
-    no_headings: "This page has no headings (h1–h6).",
-    history_empty: "No checks yet.",
-  },
   dashboard_url: "https://wcagpilot.com/app",
 };
 
@@ -53,11 +28,6 @@ async function loadUIFromServer() {
         document.head.appendChild(style);
       }
 
-      // Update labels
-      if (data.labels) {
-        UI.labels = { ...UI.labels, ...data.labels };
-      }
-
       // Update dashboard URL
       if (data.dashboard_url) {
         UI.dashboard_url = data.dashboard_url;
@@ -66,6 +36,56 @@ async function loadUIFromServer() {
   } catch (err) {
     // Failed to load UI from server, using defaults
   }
+}
+
+// ============================================================
+// Refresh dynamic UI elements after language change
+// ============================================================
+function refreshDynamicUI() {
+  // Refresh plan label in profile
+  if (currentUser) {
+    const plan = currentUser.plan || "free";
+    const planEl = $("profile-plan");
+    if (planEl) {
+      planEl.textContent = plan === "pro" ? t('ui.plan_pro') : t('ui.plan_free');
+    }
+  }
+
+  // Refresh limits text if visible
+  if (currentLimits) {
+    updateLimits(currentLimits);
+  }
+}
+
+// ============================================================
+// Language picker setup
+// ============================================================
+function setupLanguagePickers() {
+  const selects = document.querySelectorAll('.lang-select');
+  selects.forEach(select => {
+    // Clear and populate
+    select.innerHTML = '';
+    I18N.available.forEach(lang => {
+      const option = document.createElement('option');
+      option.value = lang.code;
+      option.textContent = `${lang.flag} ${lang.name}`;
+      if (lang.code === I18N.lang) {
+        option.selected = true;
+      }
+      select.appendChild(option);
+    });
+
+    // Handle change
+    select.addEventListener('change', async (e) => {
+      await I18N.setLanguage(e.target.value);
+      // Update all selects to match
+      document.querySelectorAll('.lang-select').forEach(s => {
+        s.value = I18N.lang;
+      });
+      // Refresh dynamic UI elements (plan label, etc.)
+      refreshDynamicUI();
+    });
+  });
 }
 
 // ============================================================
@@ -225,7 +245,7 @@ function showProfile() {
     const plan = currentUser.plan || "free";
     const planEl = $("profile-plan");
     if (planEl) {
-      planEl.textContent = plan === "pro" ? "Pro Plan" : "Free Plan";
+      planEl.textContent = plan === "pro" ? t('ui.plan_pro') : t('ui.plan_free');
       planEl.className = "profile-plan" + (plan === "pro" ? " profile-plan-pro" : "");
     }
   }
@@ -252,13 +272,13 @@ function showResult(data) {
 
   if (compliant && !hasWarnings) {
     verdictBox.className = "verdict-box verdict-pass";
-    verdictTitle.textContent = "✓ Passed";
+    verdictTitle.textContent = t('verdicts.pass_short');
   } else if (compliant && hasWarnings) {
     verdictBox.className = "verdict-box verdict-warning";
-    verdictTitle.textContent = "⚠ Review needed";
+    verdictTitle.textContent = t('verdicts.warning_short');
   } else {
     verdictBox.className = "verdict-box verdict-fail";
-    verdictTitle.textContent = "✗ Failed";
+    verdictTitle.textContent = t('verdicts.fail_short');
   }
 
   verdictSummary.textContent = data.summary || "";
@@ -300,9 +320,9 @@ function showResult(data) {
   const detailsBtn = $("details-btn");
   detailsBtn.classList.remove("hidden");
   if (compliant && !hasWarnings) {
-    detailsBtn.textContent = UI.labels.btn_details_pass;
+    detailsBtn.textContent = t('ui.btn_details_pass');
   } else {
-    detailsBtn.textContent = UI.labels.btn_details;
+    detailsBtn.textContent = t('ui.btn_details');
   }
 
   // Update limits if returned
@@ -314,8 +334,7 @@ function showResult(data) {
 }
 
 function checkLabel(id) {
-  const key = "check_" + id;
-  return UI.labels[key] || id;
+  return t(`checks.${id}`) !== `checks.${id}` ? t(`checks.${id}`) : id;
 }
 
 // ============================================================
@@ -326,7 +345,7 @@ function renderHistory(data) {
   list.innerHTML = "";
 
   if (!data.checks || data.checks.length === 0) {
-    list.innerHTML = `<p class="history-empty">${UI.labels.history_empty}</p>`;
+    list.innerHTML = `<p class="history-empty">${t('history.empty')}</p>`;
     showSection("history");
     return;
   }
@@ -408,9 +427,9 @@ function showError(message) {
 
 function showLimitReached(limits) {
   const resetDate = limits.resets_at
-    ? new Date(limits.resets_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    ? new Date(limits.resets_at).toLocaleDateString(I18N.lang, { month: "long", day: "numeric", year: "numeric" })
     : "next month";
-  $("limit-info").textContent = `You've used ${limits.used}/${limits.limit} checks this month. Limit resets: ${resetDate}.`;
+  $("limit-info").textContent = t('ui.limit_info', { used: limits.used, limit: limits.limit, date: resetDate });
   showSection("limit");
 }
 
@@ -441,19 +460,20 @@ async function openDashboardWithToken() {
 async function handleCheck() {
   try {
     showSection("loading");
-    $("loading-text").textContent = UI.labels.loading_extract;
+    $("loading-text").textContent = t('ui.loading_extract');
 
     const headings = await extractFromActiveTab();
 
     if (headings.headingCount === 0) {
-      showError(UI.labels.no_headings);
+      showError(t('ui.no_headings'));
       return;
     }
 
-    $("loading-text").textContent = UI.labels.loading_analyze;
+    $("loading-text").textContent = t('ui.loading_analyze');
 
-    // Send to server
-    const result = await checkPage(headings);
+    // Send to server with language for Gemini summaries
+    const geminiLang = I18N.strings?.gemini_language || 'English';
+    const result = await checkPage(headings, geminiLang);
 
     if (result.error?.code === "LIMIT_EXCEEDED") {
       showLimitReached(result.error.details);
@@ -571,8 +591,14 @@ initOnboarding();
 // ============================================================
 (async () => {
   try {
+    // Initialize i18n first (loads translations)
+    await I18N.init();
+
+    // Setup language pickers
+    setupLanguagePickers();
+
     // Show loading state while checking auth
-    $("loading-text").textContent = "Loading...";
+    $("loading-text").textContent = t('ui.loading');
 
     // Check storage first (fast, no network)
     const data = await chrome.storage.local.get(["auth"]);
