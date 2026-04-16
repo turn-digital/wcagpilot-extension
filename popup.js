@@ -99,7 +99,7 @@ function setupLanguagePickers() {
     I18N.available.forEach(lang => {
       const option = document.createElement('option');
       option.value = lang.code;
-      option.textContent = `${lang.flag} ${lang.name}`;
+      option.textContent = lang.name;
       if (lang.code === I18N.lang) {
         option.selected = true;
       }
@@ -214,9 +214,21 @@ function shouldShowOnboarding() {
 // ============================================================
 async function showHome() {
   if (currentUser) {
-    const initial = (currentUser.name || currentUser.email || "?").charAt(0).toUpperCase();
+    const profilePhoto = $("profile-photo");
     const profileInitial = $("profile-initial");
-    if (profileInitial) profileInitial.textContent = initial;
+
+    if (currentUser.picture && profilePhoto) {
+      profilePhoto.src = currentUser.picture;
+      profilePhoto.classList.remove("hidden");
+      if (profileInitial) profileInitial.classList.add("hidden");
+    } else {
+      const initial = (currentUser.name || currentUser.email || "?").charAt(0).toUpperCase();
+      if (profileInitial) {
+        profileInitial.textContent = initial;
+        profileInitial.classList.remove("hidden");
+      }
+      if (profilePhoto) profilePhoto.classList.add("hidden");
+    }
   }
 
   if (currentLimits) {

@@ -13,7 +13,7 @@ const I18N = {
 
   // Fallback strings (English) in case fetch fails
   fallback: {
-    meta: { code: 'en', name: 'English', flag: '🇬🇧' },
+    meta: { code: 'en', name: 'English' },
     ui: {
       language: 'Language',
       loading: 'Analyzing...',
@@ -125,11 +125,11 @@ const I18N = {
     } catch (err) {
       // Use default list
       this.available = [
-        { code: 'en', name: 'English', flag: '🇬🇧' },
-        { code: 'lv', name: 'Latviešu', flag: '🇱🇻' },
-        { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
-        { code: 'fr', name: 'Français', flag: '🇫🇷' },
-        { code: 'es', name: 'Español', flag: '🇪🇸' }
+        { code: 'en', name: 'English' },
+        { code: 'lv', name: 'Latviešu' },
+        { code: 'de', name: 'Deutsch' },
+        { code: 'fr', name: 'Français' },
+        { code: 'es', name: 'Español' }
       ];
     }
   },
