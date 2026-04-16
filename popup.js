@@ -148,6 +148,10 @@ function showSection(name) {
   Object.values(sections).forEach((s) => {
     if (s) s.classList.add("hidden");
   });
+  // Remove checking class when leaving loading section
+  if (sections.loading) {
+    sections.loading.classList.remove("checking");
+  }
   if (sections[name]) {
     sections[name].classList.remove("hidden");
   } else {
@@ -487,6 +491,7 @@ async function openDashboardWithToken() {
 async function handleCheck() {
   try {
     showSection("loading");
+    sections.loading.classList.add("checking");
     const loadingText = $("loading-text");
     if (loadingText) loadingText.textContent = t('ui.loading_extract');
 
@@ -525,6 +530,7 @@ async function handleCheck() {
 async function handleHistory() {
   try {
     showSection("loading");
+    sections.loading.classList.add("checking");
     const loadingText = $("loading-text");
     if (loadingText) loadingText.textContent = "Loading history...";
     const data = await getHistory();
@@ -646,9 +652,6 @@ function setupEventListeners() {
 (async () => {
   try {
     await I18N.init();
-
-    const loadingText = $("loading-text");
-    if (loadingText) loadingText.textContent = t('ui.loading');
 
     const data = await chrome.storage.local.get(["auth"]);
 

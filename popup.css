@@ -32,8 +32,8 @@ body {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   LOADING SCREEN — Fully hardcoded, no server dependency
-   These styles use #loading-section for high specificity
+   LOADING SCREEN — Shows on startup and during check
+   Text elements hidden by default, shown when check starts
    ══════════════════════════════════════════════════════════════ */
 
 #loading-section {
@@ -116,6 +116,11 @@ body {
   text-align: center;
   margin-bottom: 8px;
   min-height: 27px;
+  display: none;
+}
+
+#loading-section.checking .loading-title {
+  display: block;
 }
 
 #loading-section .loading-hint {
@@ -124,6 +129,11 @@ body {
   text-align: center;
   margin-bottom: 24px;
   min-height: 21px;
+  display: none;
+}
+
+#loading-section.checking .loading-hint {
+  display: block;
 }
 
 #loading-section .loading-warning {
@@ -135,6 +145,11 @@ body {
   background: #fef3c7;
   border-radius: 8px;
   min-height: 41px;
+  display: none;
+}
+
+#loading-section.checking .loading-warning {
+  display: block;
 }
 
 /* ══════════════════════════════════════════════════════════════
