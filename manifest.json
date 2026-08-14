@@ -1,14 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "WCAGpilot",
-  "description": "Pārbauda virsrakstu piekļūstamību (WCAG 2.4.6)",
-  "version": "1.2",
-  "permissions": ["identity", "storage", "activeTab", "scripting"],
+  "name": "WCAGpilot (personal)",
+  "description": "Audits the current tab (incl. login/VPN pages) and downloads a full accessibility report with screenshots.",
+  "version": "2.1",
+  "permissions": ["activeTab", "scripting", "downloads", "debugger"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -19,20 +18,5 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://wcagpilot.com/app/*",
-        "https://*.wcagpilot.com/app/*",
-        "https://wcagpilot-web.pages.dev/app/*",
-        "https://*.wcagpilot-web.pages.dev/app/*",
-        "http://localhost/app/*",
-        "http://localhost:*/app/*"
-      ],
-      "js": ["sync-auth.js"],
-      "run_at": "document_idle"
-    }
-  ],
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwP/bS5iXU/ja+ycl5c4rI3wnw0Kajz1PwR4cBIJLqBiflAZS3DBVk8k+TnCcQMxPbEVtQ4VprPUFG1KF1zqhAApQr+VBTp1qFR6pqVSFjRxV5K8DJR8axoze6qiZjcIxPDgy3k83wzHx8n4QgKSP6hR2Of9tuF1KgvwjvhqPPURBF5Et0iQRKbIFCywCHn1CPrOLL6mYefhwPAxfYNUi53pkTButKMop4idoT/rrSdW2QmQTYhTQHwDW6mP0IpbbXI8oR8gQf6K1Y8HqcGIfK27+Dljkjg/7KtcA1p/snBfI+t0QnlOlQV0olJLO6f4jLrsL7z0VbR9rvYzSR4IF9wIDAQAB"
+  }
 }

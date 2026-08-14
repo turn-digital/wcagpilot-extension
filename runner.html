@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WCAGpilot audit</title>
+  <style>
+    :root { --ink:#1A1A2E; --muted:#636B74; --green:#2D7A0E; --greenbg:#E8F5E1; --red:#c1362b; --line:#e5e7eb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, 'Inter', sans-serif; color: var(--ink); background: #fff; }
+    .topbar { display:flex; align-items:center; gap:8px; padding:14px 16px; border-bottom:1px solid var(--line); }
+    .wordmark { font-weight:700; font-size:16px; letter-spacing:-.2px; }
+    .wordmark .p { color: var(--green); }
+    main { padding: 18px 16px 20px; }
+    .lead { font-size:13px; color:var(--muted); margin:0 0 14px; line-height:1.5; word-break:break-all; }
+    .btn { width:100%; display:inline-flex; align-items:center; justify-content:center; gap:8px;
+           padding:12px 16px; border-radius:10px; font-size:14px; font-weight:600; border:none; cursor:pointer; }
+    .btn-primary { background: var(--green); color:#fff; }
+    .btn-primary:hover { background:#256309; }
+    .btn-primary:disabled { background:#9CB79A; cursor:default; }
+    .btn-secondary { background:#fff; color:var(--ink); border:1px solid var(--line); margin-top:8px; }
+    .btn-secondary:hover { background:#f6f7f8; }
+    .hidden { display:none !important; }
+    .status { margin-top:16px; font-size:13px; line-height:1.5; }
+    .spinner { width:18px; height:18px; border:2px solid var(--greenbg); border-top-color:var(--green);
+               border-radius:50%; animation:spin .7s linear infinite; display:inline-block; vertical-align:-3px; margin-right:8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .warn { color:var(--muted); font-size:12px; margin-top:10px; line-height:1.5; }
+    .ok { color:var(--green); font-weight:600; }
+    .err { color:var(--red); }
+    .result-box { margin-top:14px; padding:12px; border:1px solid var(--line); border-radius:10px; background:#fafafa; }
+    .result-title { font-weight:600; font-size:14px; margin:0 0 4px; }
+    .result-sub { color:var(--muted); font-size:12px; margin:0; word-break:break-all; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <svg width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <rect x="4" y="4" width="56" height="56" rx="14" fill="#E8F5E1"/>
+      <rect x="12" y="14" width="40" height="8" rx="4" fill="#1A1A2E"/>
+      <rect x="12" y="28" width="32" height="8" rx="4" fill="#636B74"/>
+      <rect x="12" y="42" width="24" height="8" rx="4" fill="#2D7A0E"/>
+    </svg>
+    <span class="wordmark">WCAG<span class="p">pilot</span></span>
+  </div>
+
+  <main>
+    <p id="target-url" class="lead">Auditing the current tab…</p>
+
+    <button id="audit-btn" class="btn btn-primary hidden">Audit again</button>
+
+    <div id="status" class="status hidden"></div>
+
+    <div id="result" class="result-box hidden">
+      <p class="result-title ok">Report downloaded</p>
+      <p id="result-sub" class="result-sub"></p>
+      <button id="again-btn" class="btn btn-secondary">Audit again</button>
+    </div>
+
+    <p id="run-warning" class="warn hidden">Audit in progress — you can switch back to the page, just don't close this window until it finishes. A "debugging" banner appears briefly on the page during the keyboard test; that's expected.</p>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="capture.js"></script>
+  <script src="assemble.js"></script>
+  <script src="evidence.js"></script>
+  <script src="live-checks.js"></script>
+  <script src="render-report.js"></script>
+  <script src="runner.js"></script>
+</body>
+</html>

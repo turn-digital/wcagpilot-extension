@@ -1,11 +1,15 @@
-// config.js — all configuration in one place
+// config.js — personal (no-login) build. Only the modular-worker base URL is
+// needed; the extension calls the public /w/* workers directly with no auth.
+
+// "dev" talks to api-dev, "prod" to api. Flip for release.
+const ENV = "dev"; // "dev" | "prod"
+
+const URLS = {
+  prod: { WORKER_URL: "https://api.wcagpilot.com" },
+  dev: { WORKER_URL: "https://api-dev.wcagpilot.com" },
+};
 
 const CONFIG = {
-  // Accounts service for authentication
-  ACCOUNTS_URL: "https://auth.wcagpilot.com",
-  // Worker for AI checks and data
-  WORKER_URL: "https://api.wcagpilot.com",
-  // Google OAuth client ID
-  GOOGLE_CLIENT_ID:
-    "268844119090-fde6bu1ldovlmt7ap41dal4pq0f95d8a.apps.googleusercontent.com",
+  ENV,
+  WORKER_URL: URLS[ENV].WORKER_URL,
 };
