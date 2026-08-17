@@ -400,18 +400,28 @@ async function _runKeyboardDebugger(tabId, onProgress) {
     const steps = [];
     const seen = new Set();
 
-    // PASS 1 — pure real-Tab walk.
+    // PASS 1 — pure real-Tab walk. Tolerate a few transient focus gaps (focus
+    // momentarily on <body> or an iframe boundary) by tabbing past them instead
+    // of hard-stopping the walk — a single gap was quitting the walk at ~3.
     await _cdpTab(tabId);
     await _sleep(110);
-    for (let k = 0; k < CAP; k++) {
+    let misses = 0;
+    for (let k = 0; k < CAP + 6; k++) {
       const [inj] = await chrome.scripting.executeScript({ target: { tabId }, func: _kbActiveInfo });
       const info = inj && inj.result;
-      if (!info) break; // focus left the page (e.g. address bar)
+      if (!info) {
+        if (++misses > 4) break; // focus truly left the page (e.g. address bar)
+        await _cdpTab(tabId);
+        await _sleep(95);
+        continue;
+      }
+      misses = 0;
       const key = info.tag + "|" + info.text + "|" + Math.round(info.r.x) + "," + info.sy;
       if (seen.has(key)) break; // wrapped around to the start
       seen.add(key);
       steps.push({ info, frame: await _cdpShot(tabId) });
       if (onProgress) onProgress(steps.length, CAP);
+      if (steps.length >= CAP) break;
       await _cdpTab(tabId);
       await _sleep(95);
     }

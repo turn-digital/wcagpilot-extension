@@ -145,10 +145,31 @@ async function _cropBitmap(bitmap, rect, dpr, vw, vh) {
   return await _blobToDataUrl(blob);
 }
 
+// Grab the visible viewport. Prefers CDP Page.captureScreenshot (focus-independent
+// — works even when the audited window is backgrounded), falling back to
+// captureVisibleTab if the debugger isn't attached.
+async function _viewportShot(tabId, windowId, cdpAttached) {
+  if (cdpAttached) {
+    const r = await chrome.debugger.sendCommand({ tabId }, "Page.captureScreenshot", { format: "png" });
+    return "data:image/png;base64," + r.data;
+  }
+  return await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+}
+
 // Capture crops for a list of targets ({key, selector?|imgSrc?}). Returns { key: dataUrl }.
 async function captureEvidenceCrops(targets, tabId, windowId) {
   const crops = {};
   if (!targets || !targets.length || !tabId) return crops;
+
+  // Attach the debugger so screenshots come from CDP (focus-independent). If the
+  // debugger can't attach (DevTools open, denied), fall back to captureVisibleTab.
+  let cdpAttached = false;
+  try {
+    await chrome.debugger.attach({ tabId }, "1.3");
+    cdpAttached = true;
+    await chrome.debugger.sendCommand({ tabId }, "Page.enable").catch(() => {});
+  } catch (e) {}
+  try {
 
   let remaining = targets.slice();
   let rounds = 0;
@@ -176,7 +197,7 @@ async function captureEvidenceCrops(targets, tabId, windowId) {
     await _sleep(350);
     let shot;
     try {
-      shot = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+      shot = await _viewportShot(tabId, windowId, cdpAttached);
     } catch (e) {
       if (String((e && e.message) || e).indexOf("MAX_CAPTURE") !== -1) { await _sleep(1100); continue; }
       break;
@@ -201,6 +222,10 @@ async function captureEvidenceCrops(targets, tabId, windowId) {
     const before = remaining.length;
     remaining = remaining.filter((t) => !done.has(t.key));
     if (remaining.length === before) break; // nothing captured this round — stop
+  }
+
+  } finally {
+    if (cdpAttached) { try { await chrome.debugger.detach({ tabId }); } catch (e) {} }
   }
   return crops;
 }
