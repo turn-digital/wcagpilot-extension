@@ -230,6 +230,52 @@ async function captureEvidenceCrops(targets, tabId, windowId) {
   return crops;
 }
 
+// ── Direct image-asset fallback ──────────────────────────────────────────────
+// The screenshot path only captures images that are a visible, on-screen <img>.
+// Many flagged images can't be shot that way: hidden theme-variant logos
+// (display:none), lazy/off-screen images, or cross-origin widget images. For
+// those we fetch the image resource by URL *in the page context* (so same-origin
+// requests just work) and embed the raw asset. This is independent of layout,
+// scroll and visibility, so it recovers most of the misses.
+//
+// Runs in the page: takes [{key, src}], returns { key: dataUrl }. Cross-origin
+// fetches still obey CORS and fail gracefully (skipped, not fatal).
+async function _fetchImageAssetsInPage(items) {
+  async function one(src) {
+    try {
+      const res = await fetch(src, { cache: "force-cache" });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      // Skip oversized assets and obvious non-images (e.g. an HTML error page).
+      if (!blob || blob.size > 2000000) return null;
+      if (blob.type && !/^image\//.test(blob.type)) return null;
+      return await new Promise((resolve) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => resolve(null);
+        fr.readAsDataURL(blob);
+      });
+    } catch (e) { return null; }
+  }
+  const out = {};
+  await Promise.all(items.map(async (it) => { const d = await one(it.src); if (d) out[it.key] = d; }));
+  return out;
+}
+
+// Fetch raw assets for targets that have a src. Returns { key: dataUrl }.
+async function fetchImageAssets(targets, tabId) {
+  const items = targets.filter((t) => t.imgSrc).map((t) => ({ key: t.key, src: t.imgSrc }));
+  if (!items.length || !tabId) return {};
+  try {
+    const [inj] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: _fetchImageAssetsInPage,
+      args: [items],
+    });
+    return (inj && inj.result) || {};
+  } catch (e) { return {}; }
+}
+
 // Wrap the worker's page result into the audit shape renderReportHtml() expects.
 function _wrapAudit(capture, page) {
   let domain = "";
@@ -282,6 +328,15 @@ async function buildEvidenceAudit(capture, workerResult, tabId, windowId, onProg
   if (targets.length) {
     const crops = await captureEvidenceCrops(targets, tabId, windowId);
     targets.forEach((t) => { if (crops[t.key]) t._ref.image = crops[t.key]; });
+
+    // Fallback: any flagged image that didn't get an in-page screenshot (hidden
+    // variant logos, off-screen/lazy, occluded) — fetch the raw asset by URL and
+    // embed it, so the report shows the actual image even when it can't be shot.
+    const need = targets.filter((t) => t.imgSrc && !t._ref.image);
+    if (need.length) {
+      const assets = await fetchImageAssets(need, tabId);
+      need.forEach((t) => { if (assets[t.key]) t._ref.image = assets[t.key]; });
+    }
   }
 
   // 4. Strip internal fields before rendering.
