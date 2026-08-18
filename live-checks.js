@@ -305,13 +305,27 @@ function _applyLiveChecks(page, kb, rz) {
   if (kbCheck && kb && kb.sampled > 0) {
     const reliable = kb.method === "debugger"; // real keyboard Tab
     const frac = kb.sampled > 0 ? kb.withoutVisibleFocus / kb.sampled : 0;
-    const summary = reliable
+    // Coverage = did the walk sample as much as it INTENDED to? The walk caps at
+    // `cap` (=min(total,40)) by design, so measure against that, not the raw
+    // total — otherwise a healthy walk that simply hit the 40-cap on a big page
+    // (e.g. 40 of 65) would look "incomplete". A genuine STALL (focus lost, walk
+    // quit after 1 of 30) samples far below the cap → that's the case we catch.
+    // When the walk stalled, the unreached elements are UNVERIFIED, so an
+    // otherwise-clean result can't be a "pass" — downgrade to "manual". A ring
+    // actually found missing is a real finding and still scores warning/fail.
+    const intended = kb.cap || Math.min(kb.totalFocusables || 40, 40);
+    const coverage = intended > 0 ? kb.sampled / intended : 1;
+    const lowCoverage = coverage < 0.8;
+    const coverageNote = lowCoverage
+      ? ` Only ${kb.sampled} of ${kb.totalFocusables} focusable elements were reached, so this result is inconclusive — verify the rest by pressing Tab.`
+      : "";
+    const summary = (reliable
       ? `Tested ${kb.sampled} of ${kb.totalFocusables} focusable element${kb.totalFocusables === 1 ? "" : "s"} by ` +
         `real keyboard Tab; ${kb.withVisibleFocus} showed a visible focus ring, ${kb.withoutVisibleFocus} did not` +
         (kb.skipped ? ` (${kb.skipped} not reached)` : "") + "."
       : `Tested ${kb.sampled} of ${kb.totalFocusables} focusable element${kb.totalFocusables === 1 ? "" : "s"} by ` +
         `screenshot; ${kb.withoutVisibleFocus} showed no focus change (verify by Tab — programmatic focus ` +
-        `can miss the browser default ring)` + (kb.skipped ? `; ${kb.skipped} skipped` : "") + ".";
+        `can miss the browser default ring)` + (kb.skipped ? `; ${kb.skipped} skipped` : "") + ".") + coverageNote;
     kbCheck.keyboardFocusData = {
       totalFocusables: kb.totalFocusables,
       withVisibleFocus: kb.withVisibleFocus,
@@ -322,10 +336,14 @@ function _applyLiveChecks(page, kb, rz) {
     // Real keyboard Tab is reliable, so a missing ring is a genuine WCAG 2.4.7
     // fail (one is a warning to tolerate the odd measurement glitch). The
     // programmatic fallback can miss default rings, so it stays conservative
-    // (manual unless focus is systemically removed).
+    // (manual unless focus is systemically removed). Either way, a clean result
+    // only counts as "pass" when coverage was high enough to trust it.
     kbCheck.status = reliable
-      ? (kb.withoutVisibleFocus === 0 ? "pass" : kb.withoutVisibleFocus === 1 ? "warning" : "fail")
-      : (kb.withoutVisibleFocus === 0 ? "pass" : frac >= 0.5 ? "fail" : "manual");
+      ? (kb.withoutVisibleFocus >= 2 ? "fail"
+          : kb.withoutVisibleFocus === 1 ? "warning"
+          : lowCoverage ? "manual" : "pass")
+      : (kb.withoutVisibleFocus === 0 ? (lowCoverage ? "manual" : "pass")
+          : frac >= 0.5 ? "fail" : "manual");
     kbCheck.description = kbCheck.keyboardFocusData.summary;
   }
 
@@ -416,7 +434,13 @@ async function _runKeyboardDebugger(tabId, onProgress) {
         continue;
       }
       misses = 0;
-      const key = info.tag + "|" + info.text + "|" + Math.round(info.r.x) + "," + info.sy;
+      // Key includes VERTICAL position (r.y): two same-type controls with the
+      // same value text in the same x-column (e.g. two `input[type=checkbox]`
+      // valued "on") otherwise produce identical keys → the 2nd was mistaken for
+      // a wrap-around and killed the walk at step 1 (contacts/form). x + y +
+      // scrollY = a unique on-page position; a true wrap still re-lands on the
+      // first element at its original x/y/scroll, so real wraps are still caught.
+      const key = info.tag + "|" + info.text + "|" + Math.round(info.r.x) + "," + Math.round(info.r.y) + "," + info.sy;
       if (seen.has(key)) break; // wrapped around to the start
       seen.add(key);
       steps.push({ info, frame: await _cdpShot(tabId) });
@@ -452,6 +476,7 @@ async function _runKeyboardDebugger(tabId, onProgress) {
       method: "debugger",
       totalFocusables: total || elements.length,
       sampled: elements.length,
+      cap: CAP, // the walk only ever samples up to CAP (=min(total,40)) elements
       skipped: Math.max(0, (total || 0) - elements.length),
       withVisibleFocus: withVisible,
       withoutVisibleFocus: elements.length - withVisible,

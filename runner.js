@@ -101,6 +101,9 @@ async function runAudit() {
 els.btn.addEventListener("click", runAudit);
 els.again.addEventListener("click", runAudit);
 
-// Auto-run once the window opens (the icon click was the "audit" gesture).
+// Auto-run once the window opens (the icon click was the "audit" gesture). No
+// Start button: a manual click grabs focus to the runner window, which then
+// fights focusTarget() for the page — auto-start lets the target come forward
+// cleanly and reach more elements in the keyboard walk.
 if (TAB_ID) runAudit();
 else setError("No target tab — open a page and click the WCAGpilot icon.");
