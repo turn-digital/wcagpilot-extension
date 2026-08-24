@@ -124,6 +124,8 @@ function formFieldRow(field) {
       (field.labelIssue ? `<p class="forms-field-line forms-field-issue"><strong>Issue:</strong> ${esc(field.labelIssue)}</p>` : "") +
       (field.requiredIssue ? `<p class="forms-field-line forms-field-issue"><strong>Required issue:</strong> ${esc(field.requiredIssue)}</p>` : "") +
       (field.suggestedLabel && field.suggestedLabel !== field.labelText ? `<p class="forms-field-line forms-field-suggestion"><strong>Suggested label:</strong> “${esc(field.suggestedLabel)}”</p>` : "") +
+      (field.evidenceHtml ? `<p class="forms-field-line"><strong>Where:</strong></p><pre class="forms-field-html">${esc(field.evidenceHtml)}</pre>` : "") +
+      shot(field.image) +
     `</div>` +
   `</div>`;
 }
@@ -147,7 +149,7 @@ function checkBodies(check) {
     forms: d.formsData && d.formsData.hasForms,
     focus: d.keyboardFocusData && d.keyboardFocusData.totalFocusables > 0,
     reflow: d.reflowData && (d.reflowData.reflow || d.reflowData.zoom),
-    contrast: d.id === "contrast" && d.contrastData && d.contrastData.totalIssues > 0,
+    contrast: d.id === "contrast" && d.contrastData && d.contrastData.elements && d.contrastData.elements.length > 0,
   };
   const out = [];
 
@@ -225,7 +227,21 @@ function checkBodies(check) {
 
   if (has.contrast) {
     const cd = d.contrastData;
-    out.push(`<div class="criterion-body"><div class="contrast-section"><p class="headings-section-label">${esc(cd.totalIssues)} ${cd.totalIssues === 1 ? "element" : "elements"} with insufficient contrast</p><ul class="contrast-list">${cd.elements.map((el) => `<li class="contrast-item"><p class="contrast-item-summary">${esc(el.summary)}</p><code class="contrast-item-selector">${esc(el.selector)}</code>${shot(el.image)}<pre class="contrast-item-html">${esc(el.html)}</pre></li>`).join("")}</ul></div></div>`);
+    const sw = (hex) => hex
+      ? `<span title="${esc(hex)}" style="display:inline-block;width:14px;height:14px;border:1px solid #999;border-radius:3px;vertical-align:middle;background:${esc(hex)}"></span>`
+      : "";
+    const count = cd.elements.length;
+    const header = `${esc(count)} contrast ${count === 1 ? "finding" : "findings"}`;
+    const rows = cd.elements.map((el) => {
+      const bgLabel = el.overImage
+        ? `image${el.bgHex ? ` (sampled ${esc(el.bgHex)})` : ""}`
+        : `background ${esc(el.bgHex || "")}`;
+      const colors = (el.fgHex || el.bgHex)
+        ? `<p class="contrast-item-colors">${sw(el.fgHex)} text ${esc(el.fgHex || "")} on ${sw(el.bgHex)} ${bgLabel}</p>`
+        : "";
+      return `<li class="contrast-item"><p class="contrast-item-summary">${esc(el.summary)}</p>${colors}<code class="contrast-item-selector">${esc(el.selector)}</code>${shot(el.image)}<pre class="contrast-item-html">${esc(el.html)}</pre></li>`;
+    }).join("");
+    out.push(`<div class="criterion-body"><div class="contrast-section"><p class="headings-section-label">${header}</p><ul class="contrast-list">${rows}</ul></div></div>`);
   }
 
   return out.join("");
@@ -303,6 +319,7 @@ async function renderReportHtml(audit) {
   /* element screenshots captured by the extension */
   .evidence-shot { display:block; max-width:100%; height:auto; margin:8px 0 4px; border:1px solid #d0d7de; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
   .evidence-shot.alt-text-shot { max-width:240px; }
+  .forms-field-html { white-space:pre-wrap; word-break:break-word; background:#f6f8fa; border:1px solid #eaeef2; border-radius:6px; padding:8px 10px; margin:4px 0; font-size:12px; overflow-x:auto; }
 </style>
 </head>
 <body>
@@ -369,6 +386,18 @@ async function renderReportHtml(audit) {
 </html>`;
 }
 
+// Turn a page URL into a filename suffix from its path (domain excluded), e.g.
+// https://old.rigassatiksme.lv/lv/contacts/form -> "contacts-form". Drops a
+// leading 2-letter locale segment (/lv/, /en/, …); homepage -> "".
+function _pagePathSlug(url) {
+  let path = "";
+  try { path = new URL(url).pathname; } catch (e) { return ""; }
+  let parts = path.split("/").filter(Boolean);
+  if (parts.length && /^[a-z]{2}$/i.test(parts[0])) parts = parts.slice(1);
+  const slug = parts.join("-").replace(/[^a-z0-9-]+/gi, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  return slug ? slug.slice(0, 60) : "";
+}
+
 /**
  * Build the report HTML and trigger a download of a self-contained .html file.
  * @param {object} audit
@@ -379,7 +408,8 @@ async function downloadReportHtml(audit) {
   const domain = (audit.domain || "audit").replace(/[^a-z0-9.-]+/gi, "-");
   let stamp = "";
   try { stamp = new Date().toISOString().slice(0, 10); } catch (e) {}
-  const filename = `a11y-audit-${domain}${stamp ? "-" + stamp : ""}.html`;
+  const slug = _pagePathSlug(audit.url);
+  const filename = `a11y-audit-${domain}${stamp ? "-" + stamp : ""}${slug}.html`;
   const blob = new Blob([html], { type: "text/html" });
   const url = URL.createObjectURL(blob);
   await new Promise((resolve, reject) => {

@@ -118,35 +118,9 @@ const assemblePageAuditLocal = (function () {
     return { status: "pass", description: "No auto-playing, moving, or blinking content detected." };
   }
 
-  function buildContrastData(contrastViolations) {
-    const elements = [];
-    for (const v of contrastViolations) {
-      for (const node of v.nodes || []) {
-        const cc = (node.any || []).find((c) => c.id === "color-contrast") || (node.any || [])[0];
-        const data = cc?.data || {};
-        const parts = [];
-        if (data.contrastRatio != null) {
-          parts.push(`Contrast ${Number(data.contrastRatio).toFixed(2)}:1` +
-            (data.expectedContrastRatio ? ` (needs ${data.expectedContrastRatio})` : ""));
-        }
-        if (data.fgColor && data.bgColor) parts.push(`text ${data.fgColor} on ${data.bgColor}`);
-        if (data.fontSize) parts.push(`${data.fontSize}${data.fontWeight && data.fontWeight !== "normal" ? ` ${data.fontWeight}` : ""}`);
-        const summary = parts.join(" · ") || cc?.message || node.failureSummary || "Insufficient contrast";
-        elements.push({
-          summary,
-          selector: Array.isArray(node.target) ? node.target.join(" ") : String(node.target ?? ""),
-          html: node.html || "",
-        });
-      }
-    }
-    return { totalIssues: elements.length, elements };
-  }
-
   async function assemble(input) {
     const { url, html } = input;
     const pageTitle = input.title || "";
-    const violations = input.axe?.violations || [];
-    const passes = (input.axe?.passes || []).map((p) => p.id);
 
     // Fan out to the 6 content workers (fail soft to empty). Keyboard/reflow are
     // done live by the extension, so they are not called here.
@@ -170,9 +144,6 @@ const assemblePageAuditLocal = (function () {
     const formsPageResult = formsResult.pages.find((r) => r.url === url) || formsResult.pages[0];
     const language = input.lang || extractLanguage(html);
 
-    const contrastViolations = violations.filter((v) => v.id === "color-contrast");
-    const nodeCount = (vs) => vs.reduce((sum, v) => sum + (v.nodeCount ?? v.nodes?.length ?? 0), 0);
-    const contrastData = buildContrastData(contrastViolations);
     const structureCheck = checkBasicStructure(html);
     const motionCheck = checkMovingContent(html);
 
@@ -224,15 +195,12 @@ const assemblePageAuditLocal = (function () {
           : undefined,
       },
       {
+        // #5 contrast — scanned live by evidence.js (computed-style WCAG sweep +
+        // pixel-sampling for text over images); emitted as "na" placeholder here.
         id: "contrast", num: 5, name: "Color Contrast",
-        status: contrastViolations.length > 0 ? "fail" : passes.includes("color-contrast") ? "pass" : "manual",
-        description: contrastViolations.length > 0
-          ? `${nodeCount(contrastViolations)} elements with insufficient contrast`
-          : passes.includes("color-contrast")
-            ? "All tested elements have sufficient contrast"
-            : "Could not automatically verify contrast",
+        status: "na",
+        description: "Measured live by the extension.",
         wcagRefs: ["WCAG 1.4.3"],
-        contrastData: contrastData.totalIssues > 0 ? contrastData : undefined,
       },
       {
         // #6 resize — measured live by live-checks.js; emitted as "na" placeholder.
@@ -361,7 +329,6 @@ const assemblePageAuditLocal = (function () {
       html: capture.html,
       title: capture.title,
       lang: capture.lang,
-      axe: capture.axe,
     });
   };
 })();

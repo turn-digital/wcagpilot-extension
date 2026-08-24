@@ -6,9 +6,11 @@
 // not just a selector.
 //
 // How it works (all local, no ZenRows / server fetch):
-//   - Contrast findings: axe already ran in-page (capture.axe). We rebuild the
-//     flat contrast element list (mirrors the collector's assemble.buildContrastData)
-//     and use each node's CSS selector to locate the element.
+//   - Contrast findings: we scan the live page ourselves (computed-style WCAG
+//     sweep, `_scanContrastInPage`) — this replaces axe. Solid-background failures
+//     are computed directly; text sitting on a background image/gradient is
+//     resolved by sampling the real pixels of its screenshot (`_sampleBgFromCrop`),
+//     which is the only way to catch text-over-image (axe punts on it).
 //   - Alt-text findings: the worker's LLM check returns flaggedImages[].src; we
 //     match those back to live <img> elements on the page.
 //   - For each target we scrollIntoView -> chrome.tabs.captureVisibleTab -> crop
@@ -19,41 +21,158 @@
 // Exposes (classic script, shared global scope):
 //   buildEvidenceAudit(capture, workerResult, onProgress?) -> audit object for renderReportHtml()
 
-// ── contrast list from axe (mirrors vpn-audit-collector/src/assemble.buildContrastData) ──
-// Adds a private `_query` selector used only to locate the element for the shot.
-function _buildContrastDataFromAxe(axe) {
-  const elements = [];
-  const violations = (axe && axe.violations) || [];
-  for (const v of violations) {
-    if (v.id !== "color-contrast") continue;
-    for (const node of v.nodes || []) {
-      const cc = (node.any || []).find((c) => c.id === "color-contrast") || (node.any || [])[0];
-      const data = (cc && cc.data) || {};
-      const parts = [];
-      if (data.contrastRatio != null) {
-        parts.push(
-          "Contrast " + Number(data.contrastRatio).toFixed(2) + ":1" +
-          (data.expectedContrastRatio ? " (needs " + data.expectedContrastRatio + ")" : "")
-        );
-      }
-      if (data.fgColor && data.bgColor) parts.push("text " + data.fgColor + " on " + data.bgColor);
-      if (data.fontSize) {
-        parts.push(data.fontSize + (data.fontWeight && data.fontWeight !== "normal" ? " " + data.fontWeight : ""));
-      }
-      const summary = parts.join(" · ") || (cc && cc.message) || node.failureSummary || "Insufficient contrast";
-      const targetArr = Array.isArray(node.target) ? node.target : [node.target];
-      const clean = targetArr.filter(Boolean).map(String);
-      elements.push({
-        summary,
-        selector: clean.join(" "),
-        html: node.html || "",
-        // Deepest selector segment — the one that resolves in this document
-        // (multi-segment targets only occur across iframe/shadow boundaries).
-        _query: clean.length ? clean[clean.length - 1] : "",
-      });
-    }
+// ── in-page contrast scanner (computed-style WCAG sweep — replaces axe) ──
+// Serialized into the tab, so it must be fully self-contained. Walks every
+// visible text-bearing element, resolves the effective background by compositing
+// ancestor background-colors over white, and computes the WCAG contrast ratio.
+// Returns only the FAILING elements: solid-background failures directly, plus
+// every text-over-image/gradient element (bgMode:"image") — those get a real
+// ratio later from pixel-sampling their screenshot.
+function _scanContrastInPage() {
+  function lin(c) { c = c / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+  function lum(r, g, b) { return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b); }
+  function ratio(fg, bg) {
+    var l1 = lum(fg[0], fg[1], fg[2]), l2 = lum(bg[0], bg[1], bg[2]);
+    var hi = Math.max(l1, l2), lo = Math.min(l1, l2);
+    return (hi + 0.05) / (lo + 0.05);
   }
-  return { totalIssues: elements.length, elements };
+  function parseColor(s) {
+    if (!s) return null;
+    var m = s.match(/rgba?\(([^)]+)\)/i);
+    if (!m) return null;
+    var p = m[1].split(",").map(function (x) { return parseFloat(x); });
+    return [p[0] || 0, p[1] || 0, p[2] || 0, p.length > 3 ? (isNaN(p[3]) ? 1 : p[3]) : 1];
+  }
+  function over(src, dst) { // composite rgba src over opaque rgb dst -> rgb
+    var a = src[3];
+    return [src[0] * a + dst[0] * (1 - a), src[1] * a + dst[1] * (1 - a), src[2] * a + dst[2] * (1 - a)];
+  }
+  function toHex(rgb) {
+    return "#" + rgb.map(function (v) {
+      var h = Math.max(0, Math.min(255, Math.round(v))).toString(16);
+      return h.length === 1 ? "0" + h : h;
+    }).join("");
+  }
+  function effectiveBg(el) {
+    var layers = [], hasImage = false, node = el;
+    while (node && node.nodeType === 1) {
+      var cs = getComputedStyle(node);
+      if (cs.backgroundImage && cs.backgroundImage !== "none") hasImage = true;
+      var bc = parseColor(cs.backgroundColor);
+      if (bc && bc[3] > 0) { layers.push(bc); if (bc[3] >= 1) break; }
+      node = node.parentElement;
+    }
+    var base = [255, 255, 255];
+    for (var i = layers.length - 1; i >= 0; i--) base = over(layers[i], base);
+    return { rgb: base, hasImage: hasImage };
+  }
+  function cssPath(el) {
+    if (el.id) return "#" + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id);
+    var parts = [], node = el, hops = 0;
+    while (node && node.nodeType === 1 && hops < 6) {
+      var idx = 1, sib = node;
+      while ((sib = sib.previousElementSibling)) { if (sib.tagName === node.tagName) idx++; }
+      parts.unshift(node.tagName.toLowerCase() + ":nth-of-type(" + idx + ")");
+      node = node.parentElement; hops++;
+    }
+    return parts.join(" > ");
+  }
+
+  var out = [];
+  var all = document.body ? document.body.querySelectorAll("*") : [];
+  for (var i = 0; i < all.length && out.length < 250; i++) {
+    var el = all[i];
+    var tag = el.tagName.toLowerCase();
+    if (tag === "script" || tag === "style" || tag === "noscript" || tag === "svg") continue;
+    if (el.disabled) continue;
+    var hasText = false, txt = "";
+    for (var c = 0; c < el.childNodes.length; c++) {
+      var n = el.childNodes[c];
+      if (n.nodeType === 3 && n.textContent.trim().length) { hasText = true; txt += n.textContent; }
+    }
+    if (!hasText) continue;
+    var cs = getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) === 0) continue;
+    var r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) continue;
+    var fg4 = parseColor(cs.color) || [0, 0, 0, 1];
+    var bgInfo = effectiveBg(el);
+    var fg = over(fg4, bgInfo.rgb);
+    var size = parseFloat(cs.fontSize) || 16;
+    var weight = parseInt(cs.fontWeight, 10) || 400;
+    var large = size >= 24 || (size >= 18.66 && weight >= 700);
+    var required = large ? 3.0 : 4.5;
+    var cr = bgInfo.hasImage ? null : ratio(fg, bgInfo.rgb);
+    // Solid bg: keep only failures. Image/gradient bg: always keep for sampling.
+    if (!bgInfo.hasImage && cr >= required) continue;
+    out.push({
+      selector: cssPath(el),
+      html: (el.outerHTML || "").slice(0, 300),
+      text: txt.trim().slice(0, 80),
+      fg: fg.map(Math.round),
+      fgHex: toHex(fg),
+      bg: bgInfo.hasImage ? null : bgInfo.rgb.map(Math.round),
+      bgHex: bgInfo.hasImage ? null : toHex(bgInfo.rgb),
+      ratio: cr == null ? null : Math.round(cr * 100) / 100,
+      bgMode: bgInfo.hasImage ? "image" : "solid",
+      fontSize: Math.round(size),
+      weight: weight,
+      large: large,
+      required: required,
+    });
+  }
+  return out;
+}
+
+// ── contrast math + pixel sampling (extension context) ──
+function _lin255(c) { c = c / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+function _lumRgb(r, g, b) { return 0.2126 * _lin255(r) + 0.7152 * _lin255(g) + 0.0722 * _lin255(b); }
+function _ratioRgb(fg, bg) {
+  const l1 = _lumRgb(fg[0], fg[1], fg[2]), l2 = _lumRgb(bg[0], bg[1], bg[2]);
+  const hi = Math.max(l1, l2), lo = Math.min(l1, l2);
+  return (hi + 0.05) / (lo + 0.05);
+}
+function _rgbHex(rgb) {
+  return "#" + rgb.map((v) => {
+    const h = Math.max(0, Math.min(255, Math.round(v))).toString(16);
+    return h.length === 1 ? "0" + h : h;
+  }).join("");
+}
+
+// For text over an image/gradient: read the element's screenshot crop, drop
+// glyph-colored pixels (near the known foreground), and take the median-luminance
+// remaining pixel as the effective background. Returns an [r,g,b] or null.
+async function _sampleBgFromCrop(dataUrl, fg) {
+  try {
+    const bmp = await _loadBitmap(dataUrl);
+    const w = bmp.width, h = bmp.height;
+    if (!w || !h) { if (bmp.close) bmp.close(); return null; }
+    const canvas = new OffscreenCanvas(w, h);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bmp, 0, 0);
+    const data = ctx.getImageData(0, 0, w, h).data;
+    if (bmp.close) bmp.close();
+    const bg = [];
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 200) continue; // skip transparent
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      if (Math.abs(r - fg[0]) + Math.abs(g - fg[1]) + Math.abs(b - fg[2]) < 100) continue; // glyph pixel
+      bg.push([r, g, b]);
+    }
+    if (bg.length < 12) return null;
+    bg.sort((a, b2) => _lumRgb(a[0], a[1], a[2]) - _lumRgb(b2[0], b2[1], b2[2]));
+    return bg[Math.floor(bg.length / 2)];
+  } catch (e) { return null; }
+}
+
+// One-line human summary for a contrast finding (grouped).
+function _contrastSummary(g) {
+  const parts = [];
+  if (g.ratio != null) parts.push("Contrast " + g.ratio.toFixed(2) + ":1 (needs " + g.required + ":1)");
+  else parts.push("Text over image — contrast not auto-measured (needs " + g.required + ":1)");
+  parts.push(g.fontSize + "px" + (g.weight >= 700 ? " bold" : "") + (g.large ? " · large text" : ""));
+  if (g.count > 1) parts.push(g.count + " elements");
+  return parts.join(" · ");
 }
 
 // ── in-page: scroll to the first target, measure all targets' viewport rects ──
@@ -291,10 +410,38 @@ function _wrapAudit(capture, page) {
   };
 }
 
+// ── in-page: locate flagged form fields by name/id and return outerHTML + rect ──
+function _locateFormFieldsInPage(items) {
+  function vis(el) {
+    var cs = getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden") return false;
+    var r = el.getBoundingClientRect();
+    return r.width > 1 && r.height > 1;
+  }
+  function cssPath(el) {
+    if (el.id) return "#" + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id);
+    var parts = [], node = el, hops = 0;
+    while (node && node.nodeType === 1 && hops < 6) {
+      var idx = 1, sib = node;
+      while ((sib = sib.previousElementSibling)) { if (sib.tagName === node.tagName) idx++; }
+      parts.unshift(node.tagName.toLowerCase() + ":nth-of-type(" + idx + ")");
+      node = node.parentElement; hops++;
+    }
+    return parts.join(" > ");
+  }
+  return items.map(function (it) {
+    var el = null;
+    if (it.id) { try { el = document.getElementById(it.id); } catch (e) {} }
+    if (!el && it.name) { try { el = document.querySelector('[name="' + it.name.replace(/"/g, '\\"') + '"]'); } catch (e) {} }
+    if (!el) return { key: it.key, html: "", visible: false, selector: "" };
+    return { key: it.key, html: (el.outerHTML || "").slice(0, 400), visible: vis(el), selector: cssPath(el) };
+  });
+}
+
 /**
  * Enrich the worker audit with local contrast detail + element screenshots and
  * return an audit object ready for renderReportHtml().
- * @param {object} capture       from captureTabAudit() (has .axe, .url, .capturedAt)
+ * @param {object} capture       from captureTabAudit() (has .url, .capturedAt)
  * @param {object} workerResult  { page } from assemblePageAuditLocal()
  * @param {number} tabId
  * @param {number} windowId
@@ -304,23 +451,60 @@ async function buildEvidenceAudit(capture, workerResult, tabId, windowId, onProg
   const page = workerResult && workerResult.page;
   if (!page || !Array.isArray(page.checks)) return _wrapAudit(capture, page);
 
-  // 1. Contrast detail is computed here (the orchestrator returns status only).
-  const contrastData = _buildContrastDataFromAxe(capture.axe || {});
+  // 1. Contrast: scan the live page ourselves (replaces axe). Failing solid-bg
+  //    elements resolve immediately; text-over-image elements are finalized after
+  //    their screenshots are captured (step 3b, pixel-sampling).
+  let contrastEls = [], contrastScanOk = true;
+  try {
+    const [inj] = await chrome.scripting.executeScript({ target: { tabId }, func: _scanContrastInPage });
+    contrastEls = (inj && inj.result) || [];
+  } catch (e) { contrastScanOk = false; }
   const contrastCheck = page.checks.find((c) => c.id === "contrast");
-  if (contrastCheck && contrastData.totalIssues > 0) {
-    contrastCheck.contrastData = { totalIssues: contrastData.totalIssues, elements: contrastData.elements };
-  }
 
-  // 2. Gather screenshot targets.
+  // Group identical solid failures (same fg/bg/size class) so the report stays
+  // readable; image-bg elements stay individual (each samples its own bg).
+  const cGroups = [];
+  const cIndex = {};
+  contrastEls.forEach((el) => {
+    if (el.bgMode === "image") { cGroups.push(Object.assign({}, el, { count: 1, _image: true })); return; }
+    const key = el.fgHex + "|" + el.bgHex + "|" + (el.large ? "L" : "S");
+    if (cIndex[key] != null) { cGroups[cIndex[key]].count++; return; }
+    cIndex[key] = cGroups.length;
+    cGroups.push(Object.assign({}, el, { count: 1 }));
+  });
+
+  // 2. Gather screenshot targets (one per contrast group).
   const targets = [];
-  contrastData.elements.forEach((el, i) => {
-    if (el._query) targets.push({ key: "c" + i, selector: el._query, _ref: el });
+  cGroups.forEach((g, i) => {
+    g._key = "c" + i;
+    targets.push({ key: g._key, selector: g.selector, _ref: g });
   });
   const altCheck = page.checks.find((c) => c.id === "alt-text" || c.id === "alt-text-v2");
   const flagged = (altCheck && altCheck.altTextData && altCheck.altTextData.flaggedImages) || [];
   flagged.forEach((img, i) => {
     if (img && img.src) targets.push({ key: "a" + i, imgSrc: img.src, _ref: img });
   });
+
+  // 2b. Forms: locate each flagged field (fail/warning) in-page → outerHTML
+  //     snippet always + a screenshot when the field is actually visible.
+  const formsCheck = page.checks.find((c) => c.id === "forms");
+  const formFields = (formsCheck && formsCheck.formsData && Array.isArray(formsCheck.formsData.fields))
+    ? formsCheck.formsData.fields.filter((f) => f.labelQuality === "fail" || f.labelQuality === "warning")
+    : [];
+  if (formFields.length) {
+    const items = formFields.map((f, i) => ({ key: "f" + i, name: f.name || "", id: f.id || "", type: f.type || "" }));
+    let located = [];
+    try {
+      const [inj] = await chrome.scripting.executeScript({ target: { tabId }, func: _locateFormFieldsInPage, args: [items] });
+      located = (inj && inj.result) || [];
+    } catch (e) {}
+    located.forEach((loc, i) => {
+      const f = formFields[i];
+      if (!f || !loc) return;
+      if (loc.html) f.evidenceHtml = loc.html;
+      if (loc.visible && loc.selector) targets.push({ key: loc.key, selector: loc.selector, _ref: f });
+    });
+  }
 
   if (onProgress) onProgress(targets.length);
 
@@ -339,8 +523,53 @@ async function buildEvidenceAudit(capture, workerResult, tabId, windowId, onProg
     }
   }
 
-  // 4. Strip internal fields before rendering.
-  contrastData.elements.forEach((el) => { delete el._query; });
+  // 3b. Finalize contrast: pixel-sample text-over-image groups from their crops,
+  //     then roll up the check status and build the report detail.
+  for (const g of cGroups) {
+    if (!g._image || !g.image) continue;
+    const sampled = await _sampleBgFromCrop(g.image, g.fg);
+    if (sampled) { g.bg = sampled; g.bgHex = _rgbHex(sampled); g.ratio = Math.round(_ratioRgb(g.fg, sampled) * 100) / 100; }
+  }
+
+  if (contrastCheck) {
+    const hardFails = cGroups.filter((g) => g.ratio != null && g.ratio < g.required);
+    const unknowns = cGroups.filter((g) => g._image && g.ratio == null); // over image, unsampleable
+    const reported = hardFails.concat(unknowns);
+    const issueCount = hardFails.reduce((s, g) => s + g.count, 0);
+
+    if (hardFails.length) {
+      contrastCheck.status = "fail";
+      contrastCheck.description = issueCount + (issueCount === 1 ? " element" : " elements") + " with insufficient contrast";
+    } else if (unknowns.length) {
+      contrastCheck.status = "manual";
+      contrastCheck.description = "Text over an image/gradient couldn't be measured automatically — verify its contrast manually.";
+    } else if (contrastScanOk) {
+      contrastCheck.status = "pass";
+      contrastCheck.description = "All text has sufficient contrast (WCAG AA).";
+    } else {
+      contrastCheck.status = "manual";
+      contrastCheck.description = "Contrast could not be scanned on this page.";
+    }
+
+    if (reported.length) {
+      contrastCheck.contrastData = {
+        totalIssues: issueCount,
+        elements: reported.map((g) => ({
+          summary: _contrastSummary(g),
+          selector: g.selector,
+          html: g.html,
+          image: g.image || undefined,
+          fgHex: g.fgHex,
+          bgHex: g.bgHex || undefined,
+          ratio: g.ratio,
+          required: g.required,
+          large: g.large,
+          count: g.count,
+          overImage: g.bgMode === "image",
+        })),
+      };
+    }
+  }
 
   return _wrapAudit(capture, page);
 }
