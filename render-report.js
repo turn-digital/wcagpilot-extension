@@ -24,7 +24,7 @@ const HEADING_CHECK_NAMES = {
 const LABEL_METHOD_NAMES = {
   label_for: "label[for]", label_wrap: "wrapping <label>", aria_label: "aria-label",
   aria_labelledby: "aria-labelledby", placeholder_only: "placeholder only",
-  title_only: "title only", none: "no label",
+  title_only: "title only", element_text: "element text", none: "no label",
 };
 const REQUIRED_MATCH_NAMES = {
   both: "required (visual + programmatic)", visual_only: "required: visual only",

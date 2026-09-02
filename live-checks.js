@@ -224,6 +224,195 @@ async function _runKeyboardPixel(tabId, windowId, onProgress) {
   };
 }
 
+// ── in-page: live forms/labels scan (native + ARIA widget controls) ──
+//
+// The static /w/forms worker regex-scans the captured HTML for NATIVE controls
+// only (<input>/<select>/<textarea>). Modern SPA sites (e.g. the E-veselība
+// booking page) build their fields from ARIA widgets — a <button> that opens a
+// date dialog, role="combobox" dropdowns, role="checkbox" toggles — so the worker
+// reports "no form elements detected" even though the page is full of controls
+// (the keyboard walk sees them because they're focusable). The extension IS the
+// live DOM, so it can resolve each control's accessible name deterministically —
+// including ARIA widgets — and give a real Name/Role/Value (WCAG 4.1.2 / 3.3.2)
+// verdict where the worker is blind. This is a STRUCTURAL check (is the control
+// named, and how); it does not attempt the worker's AI "is the name good" nuance.
+function _scanFormsInPage() {
+  function isVisible(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return false;
+    const s = getComputedStyle(el);
+    return !(s.visibility === "hidden" || s.display === "none" || parseFloat(s.opacity) === 0);
+  }
+  function isDisabled(el) {
+    return el.disabled === true || el.getAttribute("aria-disabled") === "true";
+  }
+  function inAriaHidden(el) {
+    for (let n = el; n; n = n.parentElement) {
+      if (n.getAttribute && n.getAttribute("aria-hidden") === "true") return true;
+    }
+    return false;
+  }
+  function clean(t) { return (t || "").replace(/\s+/g, " ").trim(); }
+
+  // Resolve the accessible name + the method used, per the ARIA name algorithm
+  // (simplified, in priority order).
+  function resolveName(el, isNative) {
+    // 1. aria-labelledby → referenced elements' text
+    const lb = el.getAttribute("aria-labelledby");
+    if (lb) {
+      const txt = clean(lb.split(/\s+/).map((id) => {
+        const ref = document.getElementById(id);
+        return ref ? ref.textContent : "";
+      }).join(" "));
+      if (txt) return { text: txt, method: "aria_labelledby", quality: "pass" };
+    }
+    // 2. aria-label
+    const al = clean(el.getAttribute("aria-label"));
+    if (al) return { text: al, method: "aria_label", quality: "pass" };
+    // 3. native <label> (for= or wrapping)
+    if (isNative) {
+      if (el.id) {
+        const forLabel = document.querySelector('label[for="' + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id) + '"]');
+        if (forLabel) { const t = clean(forLabel.textContent); if (t) return { text: t, method: "label_for", quality: "pass" }; }
+      }
+      const wrap = el.closest("label");
+      if (wrap) { const t = clean(wrap.textContent); if (t) return { text: t, method: "label_wrap", quality: "pass" }; }
+    }
+    // 4. title
+    const title = clean(el.getAttribute("title"));
+    if (title) return { text: title, method: "title_only", quality: "warning" };
+    // 5. placeholder (native text-like inputs only)
+    const ph = clean(el.getAttribute("placeholder"));
+    if (ph) return { text: ph, method: "placeholder_only", quality: "warning" };
+    // 6. element's own text (custom widgets like <div role="checkbox">Label</div>).
+    //    Skip native inputs (their textContent is empty/irrelevant).
+    if (!isNative) {
+      const own = clean(el.textContent);
+      if (own && own.length <= 120) return { text: own, method: "element_text", quality: "pass" };
+    }
+    return { text: "", method: "none", quality: "fail" };
+  }
+
+  const NATIVE_SEL = 'input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),select,textarea';
+  const ARIA_SEL = '[role="combobox"],[role="checkbox"],[role="radio"],[role="switch"],[role="textbox"],[role="searchbox"],[role="spinbutton"],[role="slider"],[role="listbox"],[contenteditable="true"]';
+
+  const seen = new Set();
+  const controls = [];
+  function collect(el, isNative) {
+    if (seen.has(el)) return;
+    if (!isVisible(el) || isDisabled(el) || inAriaHidden(el)) return;
+    seen.add(el);
+    let type;
+    if (isNative) {
+      type = el.tagName.toLowerCase() === "input" ? (el.getAttribute("type") || "text") : el.tagName.toLowerCase();
+    } else {
+      type = el.getAttribute("role") || (el.isContentEditable ? "textbox" : "widget");
+    }
+    const name = resolveName(el, isNative);
+    const required = el.required === true || el.getAttribute("aria-required") === "true";
+    controls.push({
+      el,
+      type,
+      name: el.getAttribute("name") || "",
+      id: el.id || "",
+      isNative,
+      labelText: name.text,
+      labelMethod: name.method,
+      labelQuality: name.quality,
+      required,
+      outerHTML: (el.outerHTML || "").slice(0, 300),
+    });
+    if (controls.length >= 250) throw { _cap: true };
+  }
+
+  try {
+    Array.prototype.forEach.call(document.querySelectorAll(NATIVE_SEL), (el) => collect(el, true));
+    Array.prototype.forEach.call(document.querySelectorAll(ARIA_SEL), (el) => {
+      if (seen.has(el)) return;
+      // A combobox pattern is often a wrapper around a real <input> — count the
+      // inner native control, not the wrapper, to avoid double-listing.
+      if (el.querySelector(NATIVE_SEL)) return;
+      collect(el, false);
+    });
+  } catch (e) { if (!e || !e._cap) throw e; }
+
+  const fields = controls.map((c) => {
+    let labelIssue;
+    if (c.labelQuality === "fail") {
+      labelIssue = "No accessible name — a screen reader announces this control with no label (WCAG 4.1.2 / 3.3.2).";
+    } else if (c.labelMethod === "placeholder_only") {
+      labelIssue = "Labeled only by placeholder text, which disappears once the user types. Add a persistent <label> or aria-label.";
+    } else if (c.labelMethod === "title_only") {
+      labelIssue = "Labeled only via the title attribute (weakly exposed, no visible label). Add a visible <label> or aria-label.";
+    }
+    return {
+      type: c.type,
+      name: c.name,
+      id: c.id,
+      labelText: c.labelText,
+      labelMethod: c.labelMethod,
+      labelQuality: c.labelQuality,
+      labelIssue,
+      requiredMatch: c.required ? "programmatic_only" : "neither",
+      outcome: c.isNative ? undefined : "custom widget (role=" + c.type + ")",
+      evidenceHtml: c.outerHTML,
+    };
+  });
+
+  const failCount = fields.filter((f) => f.labelQuality === "fail").length;
+  const warningCount = fields.filter((f) => f.labelQuality === "warning").length;
+  const passCount = fields.filter((f) => f.labelQuality === "pass").length;
+  const labelFindings = fields
+    .filter((f) => f.labelIssue)
+    .map((f) => ({
+      field: f.name || f.id || f.type,
+      issue: f.labelIssue,
+      recommendation: f.labelQuality === "fail"
+        ? "Associate a visible <label> (or aria-label / aria-labelledby) so the control has an accessible name."
+        : "Replace the placeholder/title-only label with a persistent, visible label.",
+    }));
+
+  const bodyText = (document.body && document.body.innerText) || "";
+  const hasRequiredLegend = /[*∗]\s*[-–—:=]?\s*(required|mandatory|oblig[āa]t|j[āa]aizpilda)/i.test(bodyText) ||
+    /(required|oblig[āa]t)\w*\s*(fields?|lauk)/i.test(bodyText);
+  const requiredCount = fields.filter((f) => f.requiredMatch !== "neither").length;
+  const requiredFindings = [];
+  let requiredScore = "not_applicable";
+  if (requiredCount > 0) {
+    requiredScore = "pass";
+    if (!hasRequiredLegend && requiredCount >= 2) {
+      requiredScore = "warning";
+      requiredFindings.push({
+        field: "(form)",
+        issue: requiredCount + " required fields, but no visible “required” legend/key was found on the page.",
+        recommendation: "Mark required fields clearly (e.g. an asterisk with a “* = required” key) so the requirement is visible, not just programmatic.",
+      });
+    }
+  }
+
+  const labelScore = failCount > 0 ? "fail" : warningCount > 0 ? "warning" : fields.length > 0 ? "pass" : "not_applicable";
+  const formCount = document.querySelectorAll("form").length;
+
+  return {
+    hasForms: fields.length > 0,
+    formCount,
+    fieldCount: fields.length,
+    fields,
+    labels: { score: labelScore, passCount, warningCount, failCount, findings: labelFindings },
+    requiredFields: { score: requiredScore, passCount: requiredCount, warningCount: requiredFindings.length, failCount: 0, findings: requiredFindings, hasRequiredLegend },
+  };
+}
+
+// Drive the live forms scan from the extension context.
+async function _runFormsLive(tabId) {
+  try {
+    const [inj] = await chrome.scripting.executeScript({ target: { tabId }, func: _scanFormsInPage });
+    return (inj && inj.result) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // ── in-page: measure horizontal overflow at the current (zoomed) layout ──
 function _overflowMeasureInPage() {
   const de = document.documentElement;
@@ -300,7 +489,7 @@ function _findCheck(page, id, num) {
   return page.checks.find((c) => c.id === id) || page.checks.find((c) => c.num === num);
 }
 
-function _applyLiveChecks(page, kb, rz) {
+function _applyLiveChecks(page, kb, rz, formsLive) {
   const kbCheck = _findCheck(page, "keyboard", 8);
   if (kbCheck && kb && kb.sampled > 0) {
     const reliable = kb.method === "debugger"; // real keyboard Tab
@@ -354,6 +543,25 @@ function _applyLiveChecks(page, kb, rz) {
     rzCheck.status = scores.indexOf("fail") !== -1 ? "fail" : scores.indexOf("warning") !== -1 ? "warning" : "pass";
     rzCheck.description =
       `Reflow: ${rz.reflow ? rz.reflow.reason : "n/a"} Zoom: ${rz.zoom ? rz.zoom.summary : "n/a"}`;
+  }
+
+  // Forms (#9): the static /w/forms worker only sees NATIVE controls. When it
+  // found none but the live DOM has real controls (ARIA widgets on an SPA), take
+  // over with the live structural scan. When the worker DID find native forms,
+  // keep its result — it carries the richer AI label-quality judgment, so we must
+  // not clobber it (no regression on native-form pages).
+  const formsCheck = _findCheck(page, "forms", 9);
+  if (formsCheck && formsLive && formsLive.hasForms) {
+    const workerHadForms = formsCheck.formsData && formsCheck.formsData.hasForms;
+    if (!workerHadForms) {
+      formsCheck.formsData = formsLive;
+      formsCheck.status = formsLive.labels.score === "fail" ? "fail"
+        : (formsLive.labels.score === "warning" || formsLive.requiredFields.score === "warning") ? "warning"
+        : "pass";
+      formsCheck.description =
+        `${formsLive.fieldCount} form control${formsLive.fieldCount === 1 ? "" : "s"} detected via live scan (native + ARIA widgets): ` +
+        `${formsLive.labels.passCount} labeled, ${formsLive.labels.warningCount} weak label, ${formsLive.labels.failCount} unlabeled.`;
+    }
   }
 
   // Recompute page rollups after overriding statuses.
@@ -514,5 +722,9 @@ async function runLiveChecks(page, tabId, windowId, onProgress) {
   let rz = null;
   try { rz = await runReflowZoom(tabId); } catch (e) { /* non-fatal */ }
 
-  _applyLiveChecks(page, kb, rz);
+  if (onProgress) onProgress("forms");
+  let formsLive = null;
+  try { formsLive = await _runFormsLive(tabId); } catch (e) { /* non-fatal */ }
+
+  _applyLiveChecks(page, kb, rz, formsLive);
 }

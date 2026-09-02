@@ -229,11 +229,13 @@ const assemblePageAuditLocal = (function () {
       {
         id: "forms", num: 9, name: "Forms & Labels",
         status: formsPageResult
-          ? (formsPageResult.labels.score === "fail" || formsPageResult.required_fields.score === "fail"
-              ? "fail"
-              : formsPageResult.labels.score === "warning" || formsPageResult.required_fields.score === "warning"
-                ? "warning"
-                : formsPageResult.labels.score === "not_applicable" ? "na" : "pass")
+          ? (!formsPageResult.has_forms
+              ? "na"
+              : formsPageResult.labels.score === "fail" || formsPageResult.required_fields.score === "fail"
+                ? "fail"
+                : formsPageResult.labels.score === "warning" || formsPageResult.required_fields.score === "warning"
+                  ? "warning"
+                  : formsPageResult.labels.score === "not_applicable" ? "na" : "pass")
           : "na",
         description: formsPageResult
           ? !formsPageResult.has_forms
