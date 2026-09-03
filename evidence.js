@@ -175,6 +175,56 @@ function _contrastSummary(g) {
   return parts.join(" · ");
 }
 
+// Decode the HTML entities that attribute serialization introduces (`&amp;` → `&`,
+// etc.) so an image URL from the worker matches the live DOM and fetches cleanly.
+function _decodeEntities(s) {
+  if (!s || s.indexOf("&") === -1) return s;
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&#0*38;/g, "&")
+    .replace(/&#x0*26;/gi, "&");
+}
+
+// ── in-page: grab each flagged image/SVG's markup so the report shows "Where:" ──
+// Items carry the same locators the screenshot pass uses: svgIndex (document order
+// among <svg>, emitted by the worker) or imgSrc (matched against document.images).
+// Returns { key: outerHTML }. Full outerHTML can be huge (icon path data / data:
+// URIs), so we keep the opening tag — the part with class/aria/id/alt that lets you
+// find it in code — and trim the rest. Returns keyed by target key (not index) so
+// images and SVGs share one call.
+function _collectEvidenceHtmlInPage(items) {
+  const svgs = document.querySelectorAll("svg");
+  const imgs = Array.prototype.slice.call(document.images);
+  const norm = (s) => { try { return new URL(s, location.href).href; } catch (e) { return s || ""; } };
+  const out = {};
+  const MAX = 1600;
+  items.forEach((it) => {
+    let el = null;
+    if (typeof it.svgIndex === "number") {
+      el = svgs[it.svgIndex] || null;
+    } else if (it.imgSrc) {
+      const want = norm(it.imgSrc);
+      el = imgs.find((im) => norm(im.currentSrc || im.src) === want)
+        || imgs.find((im) => { const a = im.getAttribute("src"); return a && want.endsWith(a); })
+        || null;
+    }
+    if (!el) return;
+    let html = "";
+    try { html = el.outerHTML || ""; } catch (e) {}
+    if (!html) return;
+    if (html.length > MAX) {
+      const openEnd = html.indexOf(">");
+      let open = openEnd !== -1 ? html.slice(0, openEnd + 1) : html.slice(0, 240);
+      const tag = (el.tagName || "svg").toLowerCase();
+      // A single giant opening tag (e.g. a data: URI on <img>) — hard-cap it too.
+      if (open.length > MAX) open = open.slice(0, MAX) + " …";
+      html = open + "\n  … [" + (html.length - open.length) + " chars trimmed] …\n</" + tag + ">";
+    }
+    out[it.key] = html;
+  });
+  return out;
+}
+
 // ── in-page: scroll to the first target, measure all targets' viewport rects ──
 // Serialized into the tab. Returns { dpr, vw, vh, items:[{key, missing?|rect,visFrac,isTarget}] }.
 function _measureTargetsInPage(items) {
@@ -183,6 +233,11 @@ function _measureTargetsInPage(items) {
   const norm = (s) => { try { return new URL(s, location.href).href; } catch (e) { return s || ""; } };
 
   function resolve(it) {
+    if (typeof it.svgIndex === "number") {
+      // Inline <svg> located by document order — matches the worker's SVG index.
+      const svgs = document.querySelectorAll("svg");
+      return svgs[it.svgIndex] || null;
+    }
     if (it.selector) {
       try { return document.querySelector(it.selector); } catch (e) { return null; }
     }
@@ -294,7 +349,7 @@ async function captureEvidenceCrops(targets, tabId, windowId) {
   let rounds = 0;
   while (remaining.length && rounds < 80) {
     rounds++;
-    const items = remaining.map((t) => ({ key: t.key, selector: t.selector, imgSrc: t.imgSrc }));
+    const items = remaining.map((t) => ({ key: t.key, selector: t.selector, imgSrc: t.imgSrc, svgIndex: t.svgIndex }));
 
     let measure = null;
     try {
@@ -481,9 +536,39 @@ async function buildEvidenceAudit(capture, workerResult, tabId, windowId, onProg
   });
   const altCheck = page.checks.find((c) => c.id === "alt-text" || c.id === "alt-text-v2");
   const flagged = (altCheck && altCheck.altTextData && altCheck.altTextData.flaggedImages) || [];
+  const altRefs = []; // flagged images/SVGs we can locate in the DOM for markup
   flagged.forEach((img, i) => {
-    if (img && img.src) targets.push({ key: "a" + i, imgSrc: img.src, _ref: img });
+    if (!img) return;
+    if (typeof img.svgIndex === "number") {
+      // Inline <svg> — no URL to fetch/match; locate it live by document order
+      // (worker emits svgIndex) and screenshot that region.
+      targets.push({ key: "a" + i, svgIndex: img.svgIndex, _ref: img });
+      altRefs.push({ key: "a" + i, svgIndex: img.svgIndex, ref: img });
+    } else if (img.src) {
+      // Serialized HTML escapes `&` as `&amp;`, so an optimizer URL arrives as
+      // `…&amp;w=640&amp;q=75` — which won't match the live <img> (breaks the crop
+      // + "Where:" lookup) and fetches a mangled URL. Decode to a real URL.
+      const cleanSrc = _decodeEntities(img.src);
+      targets.push({ key: "a" + i, imgSrc: cleanSrc, _ref: img });
+      altRefs.push({ key: "a" + i, imgSrc: cleanSrc, ref: img });
+    }
   });
+
+  // 2a-html. Grab the markup (outerHTML) for each flagged image/SVG so the report
+  //          shows "Where:" — the exact code to find on the page (the src is not
+  //          always enough to locate a specific instance; for inline SVGs there is
+  //          no src at all).
+  if (altRefs.length) {
+    try {
+      const [inj] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: _collectEvidenceHtmlInPage,
+        args: [altRefs.map((t) => ({ key: t.key, svgIndex: t.svgIndex, imgSrc: t.imgSrc }))],
+      });
+      const map = (inj && inj.result) || {};
+      altRefs.forEach((t) => { const h = map[t.key]; if (h) t.ref.evidenceHtml = h; });
+    } catch (e) { /* non-fatal — findings still show descriptor + shot */ }
+  }
 
   // 2b. Forms: locate each flagged field (fail/warning) in-page → outerHTML
   //     snippet always + a screenshot when the field is actually visible.
@@ -523,12 +608,27 @@ async function buildEvidenceAudit(capture, workerResult, tabId, windowId, onProg
     }
   }
 
-  // 3b. Finalize contrast: pixel-sample text-over-image groups from their crops,
+  // 3b. Finalize contrast: pixel-sample crops for the REAL painted background,
   //     then roll up the check status and build the report detail.
+  //     - text-over-image groups: sample to measure the ratio (as before).
+  //     - "solid" FAILURES: ALSO sample. Our CSS walk only sees an ancestor's own
+  //       background — it can't see a gradient painted by a ::before pseudo-element
+  //       or a positioned sibling layer (the standard hero-banner pattern). Those
+  //       fall through as "solid" against the nearest real background-color (often
+  //       a near-white page bg) → a FALSE fail like white "Labvakar!" reading
+  //       1.10:1 on #f7f3f2. Verifying against the actual pixels behind the glyphs
+  //       fixes it: text truly over a high-contrast gradient is rescued; a genuine
+  //       low-contrast solid samples back to ~the same colour and stays failing.
   for (const g of cGroups) {
-    if (!g._image || !g.image) continue;
+    if (!g.image) continue;                 // no crop → can't verify; keep as-is
+    if (!g._image && g.ratio == null) continue; // solid must have a computed ratio
     const sampled = await _sampleBgFromCrop(g.image, g.fg);
-    if (sampled) { g.bg = sampled; g.bgHex = _rgbHex(sampled); g.ratio = Math.round(_ratioRgb(g.fg, sampled) * 100) / 100; }
+    if (sampled) {
+      g.bg = sampled;
+      g.bgHex = _rgbHex(sampled);
+      g.ratio = Math.round(_ratioRgb(g.fg, sampled) * 100) / 100;
+      if (!g._image) g._sampledSolid = true; // real bg came from pixels, not CSS
+    }
   }
 
   if (contrastCheck) {

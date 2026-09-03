@@ -473,6 +473,16 @@ details.heading-check-item[open] .heading-check-toggle {
     padding: 2px 8px;
     border-radius: 4px;
 }
+.alt-text-name {
+    font-family: "Barlow", "Inter", sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a2e;
+    word-break: break-all;
+}
+.alt-text-srcline {
+    margin: 0 0 8px 26px;
+}
 .alt-text-src {
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 12px;

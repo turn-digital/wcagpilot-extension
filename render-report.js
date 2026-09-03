@@ -46,12 +46,62 @@ function statusText(s) {
 const sevRank = (s) => (s === "fail" || s === "bad" ? 0 : s === "warning" ? 1 : 2);
 const bySeverity = (arr) => arr.slice().sort((a, b) => sevRank(a.status) - sevRank(b.status));
 
-function altSrc(src) {
-  const display = src.length > 60 ? "..." + src.slice(-57) : src;
-  if (/^https?:\/\//i.test(src)) {
-    return `<a class="alt-text-src" href="${esc(src)}" target="_blank" rel="noopener noreferrer" title="${esc(src)}">${esc(display)}</a>`;
+// Derive a human-readable name for an image so the report says WHICH image is
+// wrong instead of dumping a URL tail. Image CDNs/optimizers wrap the real file
+// in a query param (Next.js `/_next/image?url=...&w=640&q=75`, Vercel, Cloudflare
+// `/cdn-cgi/image/...`), so the naive URL tail is just optimizer noise like
+// "...LDVC_Pilnais_Balts.0p5h1ifv7fmgp.png&w=640&q=75". Unwrap it, then take the
+// decoded basename.
+// Unwrap an image-optimizer URL to the REAL underlying image, and resolve it to
+// an absolute URL so the report link actually works. Optimizers wrap the real
+// file in a query param (Next.js `/_next/image?url=...&w=640&q=75`, Vercel,
+// Cloudflare `/cdn-cgi/image/...`) and the wrapper path is often relative — so
+// the raw src is both ugly ("...LDVC_Pilnais_Balts...png&w=640&q=75") and dead as
+// a link. Returns the decoded, page-absolute underlying URL where possible.
+function realImageUrl(src, pageUrl) {
+  if (!src) return "";
+  let u = src;
+  try {
+    const wrapped = /[?&]url=([^&]+)/.exec(src);
+    if (wrapped && /(_next\/image|\/cdn-cgi\/image|_vercel\/image|\/image[/?])/i.test(src)) {
+      u = decodeURIComponent(wrapped[1]);
+    }
+    if (/^data:/i.test(u)) return u;
+    // Resolve relative → absolute against the page URL so the link works. Only
+    // for real URL/path strings — the worker's SVG descriptors ("Inline SVG #1
+    // (near: …)") contain spaces and must NOT be coerced into a fake link.
+    if (pageUrl && !/^https?:\/\//i.test(u) && !/\s/.test(u)) {
+      try { u = new URL(u, pageUrl).href; } catch (e) {}
+    }
+  } catch (e) { return src; }
+  return u;
+}
+
+// Derive a human-readable name for an image so the report says WHICH image is
+// wrong instead of dumping a URL tail.
+function imageName(src) {
+  if (!src) return "";
+  try {
+    let u = realImageUrl(src, null); // unwrap only; no origin needed for the name
+    if (/^data:/i.test(u)) return "(inline data image)";
+    // Non-URL descriptors (e.g. the worker's "Inline SVG #1 (near: …)") — show as-is.
+    if (!/^https?:\/\//i.test(u) && !u.startsWith("/")) return src;
+    u = u.split("#")[0].split("?")[0];
+    let base = u.substring(u.lastIndexOf("/") + 1);
+    try { base = decodeURIComponent(base); } catch (e) {}
+    return base || u || src;
+  } catch (e) {
+    return src;
   }
-  return `<code class="alt-text-src">${esc(display)}</code>`;
+}
+
+function altSrc(src, pageUrl) {
+  const real = realImageUrl(src, pageUrl) || src;
+  const display = real.length > 60 ? "..." + real.slice(-57) : real;
+  if (/^https?:\/\//i.test(real)) {
+    return `<a class="alt-text-src" href="${esc(real)}" target="_blank" rel="noopener noreferrer" title="${esc(real)}">${esc(display)}</a>`;
+  }
+  return `<code class="alt-text-src" title="${esc(real)}">${esc(display)}</code>`;
 }
 
 function altVal(alt) {
@@ -140,7 +190,7 @@ function formsIssues(label, findings) {
     ).join("") + `</div>`;
 }
 
-function checkBodies(check) {
+function checkBodies(check, pageUrl) {
   const d = check;
   const has = {
     headings: d.id === "headings" && d.headingsData && (d.headingsData.checks.length > 0 || d.headingsData.currentOutline.length > 0),
@@ -159,8 +209,12 @@ function checkBodies(check) {
       const isFail = img.status === "fail";
       return `<div class="alt-text-item alt-text-item--${esc(img.status)}" data-status="${esc(img.status)}">` +
         `<div class="alt-text-item-header"><span class="alt-text-icon alt-text-icon--${esc(img.status)}" aria-hidden="true">${isFail ? "✗" : "⚠"}</span>` +
-        `<span class="alt-text-badge alt-text-badge--${esc(img.status)}">${isFail ? "Failed" : "Warning"}</span>${altSrc(img.src)}</div>` +
-        `<div class="alt-text-details"><p><strong>Alt:</strong> ${altVal(img.alt)}</p><p><strong>${isFail ? "Issue" : "Suggestion"}:</strong> ${esc(img.reason)}</p>${shot(img.image, "alt-text-shot")}</div></div>`;
+        `<span class="alt-text-badge alt-text-badge--${esc(img.status)}">${isFail ? "Failed" : "Warning"}</span>` +
+        `<span class="alt-text-name" title="${esc(img.src)}">${esc(imageName(img.src))}</span></div>` +
+        `<div class="alt-text-srcline">${altSrc(img.src, pageUrl)}</div>` +
+        `<div class="alt-text-details"><p><strong>Alt:</strong> ${altVal(img.alt)}</p><p><strong>${isFail ? "Issue" : "Suggestion"}:</strong> ${esc(img.reason)}</p>` +
+        (img.evidenceHtml ? `<p><strong>Where:</strong></p><pre class="alt-text-html">${esc(img.evidenceHtml)}</pre>` : "") +
+        `${shot(img.image, "alt-text-shot")}</div></div>`;
     }).join("");
     const altActive = at.badCount > 0 ? "failed" : "warnings";
     out.push(`<div class="criterion-body">${filterChips([{ label: "All", n: at.flaggedImages.length, key: "all" }, { label: "Failed", n: at.badCount, key: "failed" }, { label: "Warnings", n: at.warningCount, key: "warnings" }], altActive)}<div class="alt-text-issues">${items}</div></div>`);
@@ -247,12 +301,12 @@ function checkBodies(check) {
   return out.join("");
 }
 
-function criterionCard(check) {
+function criterionCard(check, pageUrl) {
   const header =
     `<span class="criterion-num">${esc(check.num)}.</span>` +
     `<div class="criterion-info"><div class="criterion-name">${esc(check.name)}</div>${check.description ? `<p class="criterion-summary">${esc(check.description)}</p>` : ""}</div>` +
     `<span class="criterion-status ${esc(check.status)}">${esc(statusText(check.status))}</span>`;
-  const bodies = checkBodies(check);
+  const bodies = checkBodies(check, pageUrl);
   if (!bodies) {
     return `<div class="criterion criterion-static"><div class="criterion-header">${header}</div></div>`;
   }
@@ -271,7 +325,7 @@ function pageResult(page, index) {
     `<div class="page-result-info"><h3 class="page-result-name">${esc(page.title || page.url)}</h3>` +
     `<a href="${esc(page.url)}" target="_blank" rel="noopener noreferrer" class="page-result-sub-url">${esc(formatDisplayUrl(page.url))}</a></div>` +
     `<span class="page-result-badge ${badgeClass}">${esc(badgeText)}</span>${chevron("page-result-chevron")}</summary>` +
-    `<div class="page-result-body">${(page.checks || []).map(criterionCard).join("")}</div>` +
+    `<div class="page-result-body">${(page.checks || []).map((c) => criterionCard(c, page.url)).join("")}</div>` +
   `</details>`;
 }
 
@@ -319,7 +373,7 @@ async function renderReportHtml(audit) {
   /* element screenshots captured by the extension */
   .evidence-shot { display:block; max-width:100%; height:auto; margin:8px 0 4px; border:1px solid #d0d7de; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
   .evidence-shot.alt-text-shot { max-width:240px; }
-  .forms-field-html { white-space:pre-wrap; word-break:break-word; background:#f6f8fa; border:1px solid #eaeef2; border-radius:6px; padding:8px 10px; margin:4px 0; font-size:12px; overflow-x:auto; }
+  .forms-field-html, .alt-text-html { white-space:pre-wrap; word-break:break-word; background:#f6f8fa; border:1px solid #eaeef2; border-radius:6px; padding:8px 10px; margin:4px 0 8px; font-size:12px; overflow-x:auto; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 </style>
 </head>
 <body>

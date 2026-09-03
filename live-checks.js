@@ -494,29 +494,45 @@ function _applyLiveChecks(page, kb, rz, formsLive) {
   if (kbCheck && kb && kb.sampled > 0) {
     const reliable = kb.method === "debugger"; // real keyboard Tab
     const frac = kb.sampled > 0 ? kb.withoutVisibleFocus / kb.sampled : 0;
-    // Coverage = did the walk sample as much as it INTENDED to? The walk caps at
-    // `cap` (=min(total,40)) by design, so measure against that, not the raw
-    // total — otherwise a healthy walk that simply hit the 40-cap on a big page
-    // (e.g. 40 of 65) would look "incomplete". A genuine STALL (focus lost, walk
-    // quit after 1 of 30) samples far below the cap → that's the case we catch.
-    // When the walk stalled, the unreached elements are UNVERIFIED, so an
-    // otherwise-clean result can't be a "pass" — downgrade to "manual". A ring
-    // actually found missing is a real finding and still scores warning/fail.
+    // When the real-Tab walk WRAPPED (looped back to its first element), it
+    // visited every stop in the page's actual keyboard tab order — so `sampled`
+    // IS the authoritative count. The raw querySelectorAll `totalFocusables`
+    // over-counts (duplicated/occluded mobile+desktop nav, [tabindex] nodes that
+    // aren't really tabbable), so subtracting it to claim "N not reached" is
+    // wrong and needlessly alarms users ("6 controls can't be reached" when all 6
+    // are phantom). Trust the walk: on a wrap, the true total = sampled and
+    // nothing is unreached. Only report unreached when the walk genuinely stopped
+    // short (hit the cap or stalled) WITHOUT wrapping.
+    const wrapped = !!kb.wrapped;
+    const trueTotal = wrapped ? kb.sampled : (kb.totalFocusables || kb.sampled);
+    const unreached = wrapped ? 0 : Math.max(0, (kb.totalFocusables || 0) - kb.sampled);
+    // Coverage = did the walk sample as much as it INTENDED to? A wrap is full
+    // coverage by definition. Otherwise the walk caps at `cap` (=min(total,40)) by
+    // design, so measure against that, not the raw total — else a healthy walk
+    // that simply hit the 40-cap on a big page (e.g. 40 of 65) would look
+    // "incomplete". A genuine STALL (focus lost, walk quit after 1 of 30) samples
+    // far below the cap → that's the case we catch. When the walk stalled, the
+    // unreached elements are UNVERIFIED, so an otherwise-clean result can't be a
+    // "pass" — downgrade to "manual". A ring actually found missing is a real
+    // finding and still scores warning/fail.
     const intended = kb.cap || Math.min(kb.totalFocusables || 40, 40);
-    const coverage = intended > 0 ? kb.sampled / intended : 1;
+    const coverage = wrapped ? 1 : (intended > 0 ? kb.sampled / intended : 1);
     const lowCoverage = coverage < 0.8;
     const coverageNote = lowCoverage
-      ? ` Only ${kb.sampled} of ${kb.totalFocusables} focusable elements were reached, so this result is inconclusive — verify the rest by pressing Tab.`
+      ? ` Only ${kb.sampled} of ${trueTotal} focusable elements were reached, so this result is inconclusive — verify the rest by pressing Tab.`
       : "";
     const summary = (reliable
-      ? `Tested ${kb.sampled} of ${kb.totalFocusables} focusable element${kb.totalFocusables === 1 ? "" : "s"} by ` +
-        `real keyboard Tab; ${kb.withVisibleFocus} showed a visible focus ring, ${kb.withoutVisibleFocus} did not` +
-        (kb.skipped ? ` (${kb.skipped} not reached)` : "") + "."
-      : `Tested ${kb.sampled} of ${kb.totalFocusables} focusable element${kb.totalFocusables === 1 ? "" : "s"} by ` +
+      ? (wrapped
+          ? `Tested all ${kb.sampled} keyboard-reachable element${kb.sampled === 1 ? "" : "s"} by ` +
+            `real keyboard Tab; ${kb.withVisibleFocus} showed a visible focus ring, ${kb.withoutVisibleFocus} did not.`
+          : `Tested ${kb.sampled} of ${trueTotal} focusable element${trueTotal === 1 ? "" : "s"} by ` +
+            `real keyboard Tab; ${kb.withVisibleFocus} showed a visible focus ring, ${kb.withoutVisibleFocus} did not` +
+            (unreached ? ` (${unreached} not reached)` : "") + ".")
+      : `Tested ${kb.sampled} of ${trueTotal} focusable element${trueTotal === 1 ? "" : "s"} by ` +
         `screenshot; ${kb.withoutVisibleFocus} showed no focus change (verify by Tab — programmatic focus ` +
-        `can miss the browser default ring)` + (kb.skipped ? `; ${kb.skipped} skipped` : "") + ".") + coverageNote;
+        `can miss the browser default ring)` + (unreached ? `; ${unreached} skipped` : "") + ".") + coverageNote;
     kbCheck.keyboardFocusData = {
-      totalFocusables: kb.totalFocusables,
+      totalFocusables: trueTotal,
       withVisibleFocus: kb.withVisibleFocus,
       withoutVisibleFocus: kb.withoutVisibleFocus,
       summary,
@@ -625,6 +641,7 @@ async function _runKeyboardDebugger(tabId, onProgress) {
     const CAP = Math.min(total || 40, 40);
     const steps = [];
     const seen = new Set();
+    let wrapped = false; // did the walk loop back to the first element (= full coverage)?
 
     // PASS 1 — pure real-Tab walk. Tolerate a few transient focus gaps (focus
     // momentarily on <body> or an iframe boundary) by tabbing past them instead
@@ -649,7 +666,7 @@ async function _runKeyboardDebugger(tabId, onProgress) {
       // scrollY = a unique on-page position; a true wrap still re-lands on the
       // first element at its original x/y/scroll, so real wraps are still caught.
       const key = info.tag + "|" + info.text + "|" + Math.round(info.r.x) + "," + Math.round(info.r.y) + "," + info.sy;
-      if (seen.has(key)) break; // wrapped around to the start
+      if (seen.has(key)) { wrapped = true; break; } // wrapped around to the start
       seen.add(key);
       steps.push({ info, frame: await _cdpShot(tabId) });
       if (onProgress) onProgress(steps.length, CAP);
@@ -685,6 +702,7 @@ async function _runKeyboardDebugger(tabId, onProgress) {
       totalFocusables: total || elements.length,
       sampled: elements.length,
       cap: CAP, // the walk only ever samples up to CAP (=min(total,40)) elements
+      wrapped, // true = the walk looped back to the start → visited the whole tab order
       skipped: Math.max(0, (total || 0) - elements.length),
       withVisibleFocus: withVisible,
       withoutVisibleFocus: elements.length - withVisible,
