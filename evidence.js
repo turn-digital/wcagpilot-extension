@@ -196,6 +196,28 @@ function _collectEvidenceHtmlInPage(items) {
   const svgs = document.querySelectorAll("svg");
   const imgs = Array.prototype.slice.call(document.images);
   const norm = (s) => { try { return new URL(s, location.href).href; } catch (e) { return s || ""; } };
+  // Is the element actually rendered on the page? The alt-text worker scans
+  // STATIC HTML and can't see stylesheet-based hiding (e.g. a flatpickr calendar
+  // that is display:none until opened), so it flags icons/SVGs buried in hidden
+  // widgets. In the live DOM we can tell: a zero-size box (covers display:none on
+  // ANY ancestor) or visibility/opacity hidden up the chain → not visible.
+  function isVisibleEl(el) {
+    let r = null;
+    try { r = el.getBoundingClientRect(); } catch (e) {}
+    if (!r || r.width < 1 || r.height < 1) return false;
+    let n = el, depth = 0;
+    while (n && n.nodeType === 1 && depth < 40) {
+      let cs = null;
+      try { cs = window.getComputedStyle(n); } catch (e) {}
+      if (cs) {
+        if (cs.display === "none" || cs.visibility === "hidden" || cs.visibility === "collapse") return false;
+        if (parseFloat(cs.opacity) === 0) return false;
+      }
+      n = n.parentElement || (n.parentNode && n.parentNode.host) || null;
+      depth++;
+    }
+    return true;
+  }
   const out = {};
   const MAX = 1600;
   items.forEach((it) => {
@@ -208,11 +230,11 @@ function _collectEvidenceHtmlInPage(items) {
         || imgs.find((im) => { const a = im.getAttribute("src"); return a && want.endsWith(a); })
         || null;
     }
-    if (!el) return;
+    if (!el) return; // can't locate → leave undefined so the caller keeps the finding
+    const visible = isVisibleEl(el);
     let html = "";
     try { html = el.outerHTML || ""; } catch (e) {}
-    if (!html) return;
-    if (html.length > MAX) {
+    if (html && html.length > MAX) {
       const openEnd = html.indexOf(">");
       let open = openEnd !== -1 ? html.slice(0, openEnd + 1) : html.slice(0, 240);
       const tag = (el.tagName || "svg").toLowerCase();
@@ -220,7 +242,7 @@ function _collectEvidenceHtmlInPage(items) {
       if (open.length > MAX) open = open.slice(0, MAX) + " …";
       html = open + "\n  … [" + (html.length - open.length) + " chars trimmed] …\n</" + tag + ">";
     }
-    out[it.key] = html;
+    out[it.key] = { html: html, visible: visible };
   });
   return out;
 }
@@ -566,8 +588,46 @@ async function buildEvidenceAudit(capture, workerResult, tabId, windowId, onProg
         args: [altRefs.map((t) => ({ key: t.key, svgIndex: t.svgIndex, imgSrc: t.imgSrc }))],
       });
       const map = (inj && inj.result) || {};
-      altRefs.forEach((t) => { const h = map[t.key]; if (h) t.ref.evidenceHtml = h; });
+      altRefs.forEach((t) => {
+        const r = map[t.key];
+        if (!r) return;
+        if (r.html) t.ref.evidenceHtml = r.html;
+        if (r.visible === false) t.ref._liveHidden = true; // in a CSS-hidden widget → drop below
+      });
     } catch (e) { /* non-fatal — findings still show descriptor + shot */ }
+
+    // Drop flagged images/SVGs that aren't actually rendered on the live page.
+    // The static-HTML alt-text worker can't see stylesheet hiding, so it flags
+    // widget internals that are display:none until opened (e.g. a closed
+    // date-picker's month arrows). Remove the positively-hidden ones and
+    // recompute the counts + check status so the report doesn't fail on things a
+    // user never sees. Anything we couldn't locate live is kept (conservative).
+    if (altCheck && altCheck.altTextData && Array.isArray(altCheck.altTextData.flaggedImages)) {
+      const at = altCheck.altTextData;
+      const hiddenCount = at.flaggedImages.filter((f) => f && f._liveHidden).length;
+      if (hiddenCount) {
+        at.flaggedImages = at.flaggedImages.filter((f) => !(f && f._liveHidden));
+        at.badCount = at.flaggedImages.filter((f) => f.status === "fail").length;
+        at.warningCount = at.flaggedImages.filter((f) => f.status === "warning").length;
+        if (typeof at.totalImages === "number") at.goodCount = Math.max(0, at.totalImages - at.badCount - at.warningCount);
+        // Don't screenshot the ones we just dropped.
+        for (let ti = targets.length - 1; ti >= 0; ti--) {
+          if (targets[ti]._ref && targets[ti]._ref._liveHidden) targets.splice(ti, 1);
+        }
+        // Re-derive status + description exactly as assemble.js does.
+        altCheck.status = at.badCount === 0 ? "pass" : "fail";
+        const t = at.totalImages, b = at.badCount, w = at.warningCount;
+        altCheck.description =
+          b === 0 && w === 0 ? `${t} images found, no issues`
+          : b > 0 && w > 0 ? `${t} images found, ${b} failed, ${w} ${w === 1 ? "warning" : "warnings"}`
+          : b > 0 ? `${t} images found, ${b} failed`
+          : `${t} images found, ${w} ${w === 1 ? "warning" : "warnings"}`;
+        // Keep the page rollup honest even if runLiveChecks doesn't run after us.
+        const failed = page.checks.filter((c) => c.status === "fail").length;
+        page.passed = failed === 0;
+        page.issueCount = failed;
+      }
+    }
   }
 
   // 2b. Forms: locate each flagged field (fail/warning) in-page → outerHTML

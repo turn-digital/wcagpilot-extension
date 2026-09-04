@@ -48,6 +48,11 @@ function _kbCollect() {
     return isVisible(el);
   });
   window.__a11yF = nodes;
+  // Tag each candidate with its index so the real-Tab walk can record WHICH
+  // candidates it actually lands on (activeElement carries the attribute). We
+  // then diff reached-vs-collected to find interactive elements keyboard Tab
+  // never reaches (SC 2.1.1). Removed again after the walk.
+  nodes.forEach((el, i) => { try { el.setAttribute("data-a11y-kbf", String(i)); } catch (e) {} });
   return {
     total: nodes.length,
     items: nodes.map((el, i) => ({
@@ -494,60 +499,58 @@ function _applyLiveChecks(page, kb, rz, formsLive) {
   if (kbCheck && kb && kb.sampled > 0) {
     const reliable = kb.method === "debugger"; // real keyboard Tab
     const frac = kb.sampled > 0 ? kb.withoutVisibleFocus / kb.sampled : 0;
-    // When the real-Tab walk WRAPPED (looped back to its first element), it
-    // visited every stop in the page's actual keyboard tab order — so `sampled`
-    // IS the authoritative count. The raw querySelectorAll `totalFocusables`
-    // over-counts (duplicated/occluded mobile+desktop nav, [tabindex] nodes that
-    // aren't really tabbable), so subtracting it to claim "N not reached" is
-    // wrong and needlessly alarms users ("6 controls can't be reached" when all 6
-    // are phantom). Trust the walk: on a wrap, the true total = sampled and
-    // nothing is unreached. Only report unreached when the walk genuinely stopped
-    // short (hit the cap or stalled) WITHOUT wrapping.
+    // `wrapped` = the real-Tab walk looped back to its first element, so it
+    // visited the page's whole keyboard tab order. `trueTotal` is retained ONLY
+    // to gate the report section (keyboardFocusData.totalFocusables > 0) — we no
+    // longer surface any element counts to the user. `lowCoverage` is still
+    // computed to decide status: a walk that STALLED (sampled far below its
+    // intended cap) can't be trusted as a clean "pass" and downgrades to
+    // "manual" — but we describe that qualitatively, never as "N of M".
     const wrapped = !!kb.wrapped;
     const trueTotal = wrapped ? kb.sampled : (kb.totalFocusables || kb.sampled);
-    const unreached = wrapped ? 0 : Math.max(0, (kb.totalFocusables || 0) - kb.sampled);
-    // Coverage = did the walk sample as much as it INTENDED to? A wrap is full
-    // coverage by definition. Otherwise the walk caps at `cap` (=min(total,40)) by
-    // design, so measure against that, not the raw total — else a healthy walk
-    // that simply hit the 40-cap on a big page (e.g. 40 of 65) would look
-    // "incomplete". A genuine STALL (focus lost, walk quit after 1 of 30) samples
-    // far below the cap → that's the case we catch. When the walk stalled, the
-    // unreached elements are UNVERIFIED, so an otherwise-clean result can't be a
-    // "pass" — downgrade to "manual". A ring actually found missing is a real
-    // finding and still scores warning/fail.
     const intended = kb.cap || Math.min(kb.totalFocusables || 40, 40);
     const coverage = wrapped ? 1 : (intended > 0 ? kb.sampled / intended : 1);
     const lowCoverage = coverage < 0.8;
-    const coverageNote = lowCoverage
-      ? ` Only ${kb.sampled} of ${trueTotal} focusable elements were reached, so this result is inconclusive — verify the rest by pressing Tab.`
+    // Product decision: the keyboard finding shows the PROBLEMATIC elements, not
+    // counts. The summary is therefore qualitative — it never reports how many
+    // elements were tested or reached (no "40 of 63").
+    const unreachable = Array.isArray(kb.unreachable) ? kb.unreachable : [];
+    const hasUnreachable = unreachable.length > 0;
+    const ringPart = reliable
+      ? (kb.withoutVisibleFocus === 0
+          ? (lowCoverage && !hasUnreachable
+              ? "Every element reached by real keyboard Tab showed a visible focus indicator, but some could not be reached automatically — verify the rest by pressing Tab."
+              : "Every element reached by real keyboard Tab showed a visible focus indicator.")
+          : "Some elements showed no visible focus indicator when reached by real keyboard Tab (WCAG 2.4.7). They are listed below.")
+      : (kb.withoutVisibleFocus === 0
+          ? "No missing focus indicators were detected, but this run used a screenshot fallback rather than a real keyboard walk — verify by pressing Tab."
+          : "Some elements appeared to show no focus change when focused (WCAG 2.4.7); verify by pressing Tab. They are listed below.");
+    const unreachablePart = hasUnreachable
+      ? " Some interactive elements were never reached during a full keyboard Tab pass, so keyboard-only users may be unable to operate them (WCAG 2.1.1). They are listed below."
       : "";
-    const summary = (reliable
-      ? (wrapped
-          ? `Tested all ${kb.sampled} keyboard-reachable element${kb.sampled === 1 ? "" : "s"} by ` +
-            `real keyboard Tab; ${kb.withVisibleFocus} showed a visible focus ring, ${kb.withoutVisibleFocus} did not.`
-          : `Tested ${kb.sampled} of ${trueTotal} focusable element${trueTotal === 1 ? "" : "s"} by ` +
-            `real keyboard Tab; ${kb.withVisibleFocus} showed a visible focus ring, ${kb.withoutVisibleFocus} did not` +
-            (unreached ? ` (${unreached} not reached)` : "") + ".")
-      : `Tested ${kb.sampled} of ${trueTotal} focusable element${trueTotal === 1 ? "" : "s"} by ` +
-        `screenshot; ${kb.withoutVisibleFocus} showed no focus change (verify by Tab — programmatic focus ` +
-        `can miss the browser default ring)` + (unreached ? `; ${unreached} skipped` : "") + ".") + coverageNote;
+    const summary = ringPart + unreachablePart;
     kbCheck.keyboardFocusData = {
       totalFocusables: trueTotal,
       withVisibleFocus: kb.withVisibleFocus,
       withoutVisibleFocus: kb.withoutVisibleFocus,
       summary,
       elements: kb.elements,
+      unreachable,
     };
     // Real keyboard Tab is reliable, so a missing ring is a genuine WCAG 2.4.7
     // fail (one is a warning to tolerate the odd measurement glitch). The
     // programmatic fallback can miss default rings, so it stays conservative
     // (manual unless focus is systemically removed). Either way, a clean result
-    // only counts as "pass" when coverage was high enough to trust it.
+    // only counts as "pass" when coverage was high enough to trust it. An
+    // unreachable interactive element (SC 2.1.1) is a genuine finding but the
+    // detection is heuristic (occlusion-filtered, wrap-gated), so it lands as a
+    // WARNING rather than flipping the whole page to fail on a possible phantom.
     kbCheck.status = reliable
       ? (kb.withoutVisibleFocus >= 2 ? "fail"
           : kb.withoutVisibleFocus === 1 ? "warning"
+          : hasUnreachable ? "warning"
           : lowCoverage ? "manual" : "pass")
-      : (kb.withoutVisibleFocus === 0 ? (lowCoverage ? "manual" : "pass")
+      : (kb.withoutVisibleFocus === 0 ? (hasUnreachable ? "warning" : lowCoverage ? "manual" : "pass")
           : frac >= 0.5 ? "fail" : "manual");
     kbCheck.description = kbCheck.keyboardFocusData.summary;
   }
@@ -620,7 +623,136 @@ function _kbActiveInfo() {
     r: { x: r.left, y: r.top, w: r.width, h: r.height },
     sy: Math.round(window.scrollY || window.pageYOffset || 0),
     dpr: window.devicePixelRatio || 1, vw: innerWidth, vh: innerHeight,
+    kbf: (el.getAttribute && el.getAttribute("data-a11y-kbf")) || null,
   };
+}
+
+// In-page: scroll a collected candidate (by its __a11yF index) into view and
+// report its rect + occlusion, so the extension can screenshot an interactive
+// element the keyboard walk never reached (SC 2.1.1 evidence).
+function _kbLocate(idx) {
+  const F = window.__a11yF || [];
+  const el = F[idx];
+  if (!el) return null;
+  try { el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" }); }
+  catch (e) { try { el.scrollIntoView(true); } catch (_) {} }
+  const r = el.getBoundingClientRect();
+  const vw = innerWidth, vh = innerHeight, dpr = window.devicePixelRatio || 1;
+  const cx = Math.min(vw - 1, Math.max(0, r.left + r.width / 2));
+  const cy = Math.min(vh - 1, Math.max(0, r.top + r.height / 2));
+  let occluded = false;
+  const top = document.elementFromPoint(cx, cy);
+  if (top && top !== el && !el.contains(top) && !top.contains(el)) occluded = true;
+  const onscreen = r.width >= 1 && r.height >= 1 && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
+  return {
+    tag: el.tagName.toLowerCase() + (el.type ? "[type=" + el.type + "]" : ""),
+    text: (el.textContent || el.value || el.getAttribute("aria-label") || el.getAttribute("title") || "").trim().slice(0, 60),
+    r: { x: r.left, y: r.top, w: r.width, h: r.height },
+    dpr, vw, vh, occluded, onscreen,
+    html: (el.outerHTML || "").slice(0, 300),
+  };
+}
+
+// In-page: filter the "never reached by Tab" candidate indices down to genuine
+// problems. A native radio group is a SINGLE Tab stop by design — Tab lands on
+// the checked (or first) radio and Arrow keys move within the group, so the
+// other radios being Tab-skipped is correct, NOT a 2.1.1 failure. Drop radios
+// whose same-name group is already keyboard-operable (a member was reached, or
+// one is checked). (Roving-tabindex widgets — tabs/toolbars/menus — are already
+// excluded upstream because their inactive items carry tabindex="-1".)
+function _kbClassifyUnreachable(missIdx, reachedIdx) {
+  const F = window.__a11yF || [];
+  const reached = new Set((reachedIdx || []).map(String));
+  const okRadioNames = new Set();
+  for (let i = 0; i < F.length; i++) {
+    const el = F[i];
+    if (el && el.tagName === "INPUT" && el.type === "radio" && el.name && (reached.has(String(i)) || el.checked)) {
+      okRadioNames.add(el.name);
+    }
+  }
+  const keep = [];
+  for (const idx of (missIdx || [])) {
+    const el = F[idx];
+    if (!el) continue;
+    if (el.tagName === "INPUT" && el.type === "radio" && el.name && okRadioNames.has(el.name)) continue;
+    keep.push(idx);
+  }
+  return keep;
+}
+
+// In-page: catch form controls that are SHOWN to the user (a visible <label>)
+// but can NEVER receive keyboard focus — e.g. a custom checkbox whose real
+// <input> is display:none/visibility:hidden while a styled span + label text is
+// painted. These never enter the focusable candidate set, so the reached-vs-
+// collected diff can't see them; this finds them directly by attempting focus.
+// Tagged with data-a11y-unf(-lab) so the extension can screenshot the LABEL
+// (the control's own box is hidden). Cleaned up in the finally block.
+function _kbScanUnfocusable() {
+  function visible(el) {
+    let r; try { r = el.getBoundingClientRect(); } catch (e) { return false; }
+    if (!r || r.width < 1 || r.height < 1) return false;
+    let n = el, d = 0;
+    while (n && n.nodeType === 1 && d < 40) {
+      let cs; try { cs = getComputedStyle(n); } catch (e) {}
+      if (cs && (cs.display === "none" || cs.visibility === "hidden" || cs.visibility === "collapse" || parseFloat(cs.opacity) === 0)) return false;
+      n = n.parentElement; d++;
+    }
+    return true;
+  }
+  function labelFor(el) {
+    if (el.id) {
+      try {
+        const sel = 'label[for="' + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id) + '"]';
+        const l = document.querySelector(sel);
+        if (l) return l;
+      } catch (e) {}
+    }
+    let n = el.parentElement, d = 0;
+    while (n && d < 5) { if (n.tagName === "LABEL") return n; n = n.parentElement; d++; }
+    return null;
+  }
+  function canFocus(el) {
+    const prev = document.activeElement;
+    try { el.focus({ preventScroll: true }); } catch (e) {}
+    const ok = document.activeElement === el;
+    try { if (el.blur) el.blur(); } catch (e) {}
+    try { if (prev && prev.focus && prev !== document.body) prev.focus({ preventScroll: true }); } catch (e) {}
+    return ok;
+  }
+  const controls = Array.prototype.slice.call(document.querySelectorAll("input:not([type=hidden]), select, textarea"));
+  const out = [];
+  let n = 0;
+  for (const el of controls) {
+    if (el.disabled) continue;
+    if (canFocus(el)) continue;              // focusable (incl. accessible opacity:0) → fine
+    const lab = labelFor(el);
+    if (!lab || !visible(lab)) continue;      // no visible label → just hidden markup, not a shown control
+    el.setAttribute("data-a11y-unf", String(n));
+    lab.setAttribute("data-a11y-unf-lab", String(n));
+    const type = el.getAttribute("type");
+    out.push({
+      i: n,
+      tag: el.tagName.toLowerCase() + (type ? "[type=" + type + "]" : ""),
+      text: (lab.textContent || "").trim().slice(0, 60),
+      html: (el.outerHTML || "").slice(0, 300),
+    });
+    n++;
+    if (n >= 15) break;
+  }
+  return out;
+}
+
+// In-page: scroll the visible label of an unfocusable control into view and
+// report its rect so the extension can screenshot it.
+function _kbLocateUnf(i) {
+  const lab = document.querySelector('[data-a11y-unf-lab="' + i + '"]');
+  if (!lab) return null;
+  try { lab.scrollIntoView({ block: "center", inline: "center", behavior: "instant" }); }
+  catch (e) { try { lab.scrollIntoView(true); } catch (_) {} }
+  const r = lab.getBoundingClientRect();
+  const vw = innerWidth, vh = innerHeight, dpr = window.devicePixelRatio || 1;
+  const onscreen = r.width >= 1 && r.height >= 1 && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
+  return { r: { x: r.left, y: r.top, w: r.width, h: r.height }, dpr, vw, vh, onscreen };
 }
 
 // Two-pass so the real-Tab modality is never interrupted:
@@ -638,22 +770,30 @@ async function _runKeyboardDebugger(tabId, onProgress) {
     await chrome.scripting.executeScript({ target: { tabId }, func: () => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); window.scrollTo(0, 0); } });
     await _sleep(150);
 
-    const CAP = Math.min(total || 40, 40);
+    const CAP = Math.min(total || 40, 40); // screenshot budget for the ring check
+    const HARD = 150; // absolute walk bound; the walk keeps Tabbing past CAP (no
+                      // screenshots) to map the FULL tab order for reachability
     const steps = [];
     const seen = new Set();
-    let wrapped = false; // did the walk loop back to the first element (= full coverage)?
+    const reachedAll = new Set(); // data-a11y-kbf of EVERY element Tab lands on (full order)
+    let wrapped = false;   // walk looped back to its first element (whole order seen)
+    let ranOffEnd = false; // focus left the page (Tabbed off the end → whole order seen)
 
     // PASS 1 — pure real-Tab walk. Tolerate a few transient focus gaps (focus
     // momentarily on <body> or an iframe boundary) by tabbing past them instead
     // of hard-stopping the walk — a single gap was quitting the walk at ~3.
+    // Screenshots are taken only for the first CAP elements (the ring check
+    // samples up to 40); the walk then KEEPS GOING with no screenshots purely to
+    // record the full tab order, so unreachable-element detection works on pages
+    // with far more than 40 focusables.
     await _cdpTab(tabId);
     await _sleep(110);
     let misses = 0;
-    for (let k = 0; k < CAP + 6; k++) {
+    for (let k = 0; k < HARD; k++) {
       const [inj] = await chrome.scripting.executeScript({ target: { tabId }, func: _kbActiveInfo });
       const info = inj && inj.result;
       if (!info) {
-        if (++misses > 4) break; // focus truly left the page (e.g. address bar)
+        if (++misses > 4) { ranOffEnd = true; break; } // focus truly left the page (end of tab order)
         await _cdpTab(tabId);
         await _sleep(95);
         continue;
@@ -668,11 +808,13 @@ async function _runKeyboardDebugger(tabId, onProgress) {
       const key = info.tag + "|" + info.text + "|" + Math.round(info.r.x) + "," + Math.round(info.r.y) + "," + info.sy;
       if (seen.has(key)) { wrapped = true; break; } // wrapped around to the start
       seen.add(key);
-      steps.push({ info, frame: await _cdpShot(tabId) });
-      if (onProgress) onProgress(steps.length, CAP);
-      if (steps.length >= CAP) break;
+      if (info.kbf != null) reachedAll.add(info.kbf);
+      if (steps.length < CAP) {
+        steps.push({ info, frame: await _cdpShot(tabId) });
+        if (onProgress) onProgress(steps.length, CAP);
+      }
       await _cdpTab(tabId);
-      await _sleep(95);
+      await _sleep(steps.length >= CAP ? 45 : 95); // no paint needed once we stop screenshotting
     }
 
     // PASS 2 — baselines (same scroll, nothing focused).
@@ -683,9 +825,17 @@ async function _runKeyboardDebugger(tabId, onProgress) {
       await _sleep(60);
       const base = await _cdpShot(tabId);
       let has = false;
+      let shot = null;
       try {
         const bf = await _loadBitmap(base), ff = await _loadBitmap(s.frame);
         has = _focusRegionChanged(bf, ff, s.info.r, s.info.dpr, s.info.vw, s.info.vh);
+        // Only the PROBLEMATIC elements (no visible focus ring) get a cropped
+        // shot — high-signal evidence of the exact control that failed, without
+        // bloating the report with a thumbnail for every element tested. Crop the
+        // FOCUSED frame (shows the control in its focused state) before closing it.
+        if (!has) {
+          try { shot = await _cropBitmap(ff, s.info.r, s.info.dpr, s.info.vw, s.info.vh); } catch (_) {}
+        }
         if (bf.close) bf.close(); if (ff.close) ff.close();
       } catch (e) {}
       elements.push({
@@ -693,8 +843,78 @@ async function _runKeyboardDebugger(tabId, onProgress) {
         hasVisibleFocus: has,
         focusIndicator: has ? "visible on Tab" : "none",
         issue: has ? null : "No visible focus indicator when reached by keyboard Tab (WCAG 2.4.7).",
+        image: shot,
       });
     }
+
+    // UNREACHABLE-ELEMENT detection (SC 2.1.1). Diff the candidates collected up
+    // front (window.__a11yF, tagged with data-a11y-kbf) against `reachedAll` —
+    // every element the FULL walk landed on (not just the 40 screenshotted). Only
+    // trustworthy when the walk saw the WHOLE tab order: it wrapped, OR it Tabbed
+    // off the end of the page. If it hit the HARD bound without either (a huge
+    // page), we can't tell "unreachable" from "past where we stopped", so we skip.
+    // Occluded / off-screen candidates are dropped as likely hidden duplicate nav
+    // — we would rather miss one than raise a false alarm.
+    const fullOrderVisited = wrapped || ranOffEnd;
+    const unreachable = [];
+    if (fullOrderVisited && total > 0) {
+      let missIdx = [];
+      for (let i = 0; i < total; i++) if (!reachedAll.has(String(i))) missIdx.push(i);
+      // Drop candidates that are legitimately Tab-skipped (non-representative
+      // radios in an operable group) before we spend screenshots on them.
+      if (missIdx.length) {
+        try {
+          const [inj] = await chrome.scripting.executeScript({ target: { tabId }, func: _kbClassifyUnreachable, args: [missIdx, Array.from(reachedAll)] });
+          if (inj && Array.isArray(inj.result)) missIdx = inj.result;
+        } catch (e) {}
+      }
+      const UNREACHED_CAP = 15; // bound the extra scroll+capture work
+      for (const idx of missIdx.slice(0, UNREACHED_CAP)) {
+        let loc = null;
+        try { const [inj] = await chrome.scripting.executeScript({ target: { tabId }, func: _kbLocate, args: [idx] }); loc = inj && inj.result; }
+        catch (e) {}
+        if (!loc || loc.occluded || !loc.onscreen) continue;
+        await _sleep(60);
+        let img = null;
+        try {
+          const shotUrl = await _cdpShot(tabId);
+          const bmp = await _loadBitmap(shotUrl);
+          img = await _cropBitmap(bmp, loc.r, loc.dpr, loc.vw, loc.vh);
+          if (bmp.close) bmp.close();
+        } catch (e) {}
+        unreachable.push({
+          tag: loc.tag, text: loc.text, evidenceHtml: loc.html, image: img,
+          issue: 'This interactive element is visible and enabled but keyboard Tab never lands on it, so keyboard-only users cannot operate it (WCAG 2.1.1). Verify it is in the tab order (avoid tabindex="-1" on real controls).',
+        });
+      }
+    }
+
+    // Independent of tab-order coverage: catch shown-but-unfocusable form
+    // controls (custom checkbox whose real <input> is display:none, etc.). This
+    // is a direct focus test, so it works even if the walk hit its bound.
+    try {
+      const [scanInj] = await chrome.scripting.executeScript({ target: { tabId }, func: _kbScanUnfocusable });
+      const unf = (scanInj && scanInj.result) || [];
+      for (const u of unf) {
+        if (unreachable.length >= 20) break;
+        let loc = null;
+        try { const [li] = await chrome.scripting.executeScript({ target: { tabId }, func: _kbLocateUnf, args: [u.i] }); loc = li && li.result; }
+        catch (e) {}
+        if (!loc || !loc.onscreen) continue;
+        await _sleep(60);
+        let img = null;
+        try {
+          const shotUrl = await _cdpShot(tabId);
+          const bmp = await _loadBitmap(shotUrl);
+          img = await _cropBitmap(bmp, loc.r, loc.dpr, loc.vw, loc.vh);
+          if (bmp.close) bmp.close();
+        } catch (e) {}
+        unreachable.push({
+          tag: u.tag, text: u.text, evidenceHtml: u.html, image: img,
+          issue: "This form control is shown on the page (it has a visible label) but keyboard focus can never land on it, so keyboard-only users cannot operate it (WCAG 2.1.1). The real control is likely hidden with display:none / visibility:hidden while a styled element is shown — hide it with clip/opacity instead so it stays focusable, or make the visible element the real control.",
+        });
+      }
+    } catch (e) {}
 
     const withVisible = elements.filter((e) => e.hasVisibleFocus).length;
     return {
@@ -707,8 +927,10 @@ async function _runKeyboardDebugger(tabId, onProgress) {
       withVisibleFocus: withVisible,
       withoutVisibleFocus: elements.length - withVisible,
       elements,
+      unreachable,
     };
   } finally {
+    try { await chrome.scripting.executeScript({ target: { tabId }, func: () => { ["data-a11y-kbf", "data-a11y-unf", "data-a11y-unf-lab"].forEach(function (a) { var ns = document.querySelectorAll("[" + a + "]"); for (var i = 0; i < ns.length; i++) ns[i].removeAttribute(a); }); } }); } catch (e) {}
     try { await chrome.debugger.detach({ tabId }); } catch (e) {}
   }
 }

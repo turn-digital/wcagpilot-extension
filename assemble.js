@@ -41,7 +41,12 @@ const assemblePageAuditLocal = (function () {
     return { results: data.results || [] };
   }
   async function callAltTexts(url, html) {
-    const data = await post("/w/alt-texts", { pages: [{ url, html }] });
+    // v2 (/w/alt-texts-v2): W3C alt-decision-tree engine. Same per-page response
+    // shape as v1 (url/total_images/pass_count/fail_count/warning_count/images[]),
+    // so the mapping below is unchanged. v2 emits `svgIndex` on inline-SVG results
+    // (parity with v1), so flagged inline SVGs still get a live screenshot +
+    // "Where:" markup via evidence.js (which locates them by svgIndex).
+    const data = await post("/w/alt-texts-v2", { pages: [{ url, html }] });
     const results = (data.pages || []).map((p) => ({
       url: p.url,
       total_images: p.total_images,

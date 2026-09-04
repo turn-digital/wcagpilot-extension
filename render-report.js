@@ -259,10 +259,14 @@ function checkBodies(check, pageUrl) {
   if (has.focus) {
     const kd = d.keyboardFocusData;
     const bad = kd.elements.filter((el) => !el.hasVisibleFocus);
-    const badHtml = bad.length ? `<div class="focus-issues"><p class="headings-section-label">Elements Without Visible Focus</p>${bad.map((el) =>
-      `<div class="focus-item"><div class="focus-item-header"><code class="focus-item-selector">${esc(el.tag)}</code><span class="focus-item-text">${esc(el.text.length > 40 ? el.text.slice(0, 37) + "..." : el.text)}</span></div>${el.issue ? `<p class="focus-item-issue">${esc(el.issue)}</p>` : ""}</div>`
-    ).join("")}</div>` : "";
-    out.push(`<div class="criterion-body"><div class="focus-summary"><p class="headings-section-label">Focusable Elements: ${esc(kd.totalFocusables)}</p><div class="focus-stats"><span class="focus-stat pass">${esc(kd.withVisibleFocus)} with visible focus</span><span class="focus-stat fail">${esc(kd.withoutVisibleFocus)} without visible focus</span></div><p class="focus-summary-text">${esc(kd.summary)}</p></div>${badHtml}</div>`);
+    const focusItem = (el) =>
+      `<div class="focus-item"><div class="focus-item-header"><code class="focus-item-selector">${esc(el.tag)}</code><span class="focus-item-text">${esc((el.text || "").length > 40 ? el.text.slice(0, 37) + "..." : (el.text || ""))}</span></div>${el.issue ? `<p class="focus-item-issue">${esc(el.issue)}</p>` : ""}${el.evidenceHtml ? `<pre class="alt-text-html">${esc(el.evidenceHtml)}</pre>` : ""}${shot(el.image, "focus-shot")}</div>`;
+    const badHtml = bad.length ? `<div class="focus-issues"><p class="headings-section-label">Elements Without Visible Focus</p>${bad.map(focusItem).join("")}</div>` : "";
+    const unreach = Array.isArray(kd.unreachable) ? kd.unreachable : [];
+    const unreachHtml = unreach.length ? `<div class="focus-issues"><p class="headings-section-label">Interactive Elements Not Reachable by Keyboard</p>${unreach.map(focusItem).join("")}</div>` : "";
+    // Show only the qualitative summary + the problematic elements (no visible
+    // focus ring, and interactive elements Tab never reaches) — no element counts.
+    out.push(`<div class="criterion-body"><div class="focus-summary"><p class="focus-summary-text">${esc(kd.summary)}</p></div>${badHtml}${unreachHtml}</div>`);
   }
 
   if (has.reflow) {
@@ -373,6 +377,7 @@ async function renderReportHtml(audit) {
   /* element screenshots captured by the extension */
   .evidence-shot { display:block; max-width:100%; height:auto; margin:8px 0 4px; border:1px solid #d0d7de; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
   .evidence-shot.alt-text-shot { max-width:240px; }
+  .evidence-shot.focus-shot { max-width:320px; }
   .forms-field-html, .alt-text-html { white-space:pre-wrap; word-break:break-word; background:#f6f8fa; border:1px solid #eaeef2; border-radius:6px; padding:8px 10px; margin:4px 0 8px; font-size:12px; overflow-x:auto; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 </style>
 </head>
