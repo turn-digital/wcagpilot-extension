@@ -374,6 +374,8 @@ async function renderReportHtml(audit) {
   body { background:#fafafa; }
   .result-context { position:static; top:auto; }
   .report-generated { color:#8b949e; font-size:12px; text-align:center; margin:40px 0 0; }
+  .methodology-note { background:#f6f8fa; border:1px solid #eaeef2; border-left:3px solid #4a5568; border-radius:8px; padding:14px 16px; margin:20px 0 0; font-size:13px; line-height:1.5; color:#4a5568; }
+  .methodology-note a { color:#0969da; }
   /* element screenshots captured by the extension */
   .evidence-shot { display:block; max-width:100%; height:auto; margin:8px 0 4px; border:1px solid #d0d7de; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
   .evidence-shot.alt-text-shot { max-width:240px; }
@@ -406,6 +408,7 @@ async function renderReportHtml(audit) {
 
   <main class="result-main">
     <div class="container">
+      <p class="methodology-note">This audit follows the W3C Web Accessibility Initiative methodology <a href="https://www.w3.org/WAI/test-evaluate/easy-checks/" target="_blank" rel="noopener noreferrer">Easy Checks — A First Review of Web Accessibility (Draft Update)</a>, evaluated against WCAG 2.1 Level AA. Easy Checks is a first review: it finds common, high-impact barriers quickly, and passing it does not by itself establish full WCAG conformance. The Draft Update is W3C work in progress — where it differs from the published Easy Checks, this audit follows the draft.</p>
       <p class="result-section-label">Page tested</p>
       <div class="results-pages">
         ${pages.map(pageResult).join("")}
