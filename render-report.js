@@ -16,6 +16,13 @@ const esc = (s) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
+// Escape an HTML snippet for display, first stripping the instrumentation
+// attributes the keyboard walk injects onto elements (data-a11y-kbf / -unf /
+// -unf-lab). Those are captured into outerHTML before the page is cleaned up,
+// so they'd otherwise leak into the evidence snippets shown to the user.
+const escSnippet = (s) =>
+  esc(String(s == null ? "" : s).replace(/\s*data-a11y-(?:kbf|unf-lab|unf)="[^"]*"/g, ""));
+
 const HEADING_CHECK_NAMES = {
   presence: "Heading presence", h1_first: "H1 heading", hierarchy: "Hierarchy order",
   empty_headings: "Empty headings", visual_headings: "Visual headings",
@@ -174,7 +181,7 @@ function formFieldRow(field) {
       (field.labelIssue ? `<p class="forms-field-line forms-field-issue"><strong>Issue:</strong> ${esc(field.labelIssue)}</p>` : "") +
       (field.requiredIssue ? `<p class="forms-field-line forms-field-issue"><strong>Required issue:</strong> ${esc(field.requiredIssue)}</p>` : "") +
       (field.suggestedLabel && field.suggestedLabel !== field.labelText ? `<p class="forms-field-line forms-field-suggestion"><strong>Suggested label:</strong> “${esc(field.suggestedLabel)}”</p>` : "") +
-      (field.evidenceHtml ? `<p class="forms-field-line"><strong>Where:</strong></p><pre class="forms-field-html">${esc(field.evidenceHtml)}</pre>` : "") +
+      (field.evidenceHtml ? `<p class="forms-field-line"><strong>Where:</strong></p><pre class="forms-field-html">${escSnippet(field.evidenceHtml)}</pre>` : "") +
       shot(field.image) +
     `</div>` +
   `</div>`;
@@ -213,7 +220,7 @@ function checkBodies(check, pageUrl) {
         `<span class="alt-text-name" title="${esc(img.src)}">${esc(imageName(img.src))}</span></div>` +
         `<div class="alt-text-srcline">${altSrc(img.src, pageUrl)}</div>` +
         `<div class="alt-text-details"><p><strong>Alt:</strong> ${altVal(img.alt)}</p><p><strong>${isFail ? "Issue" : "Suggestion"}:</strong> ${esc(img.reason)}</p>` +
-        (img.evidenceHtml ? `<p><strong>Where:</strong></p><pre class="alt-text-html">${esc(img.evidenceHtml)}</pre>` : "") +
+        (img.evidenceHtml ? `<p><strong>Where:</strong></p><pre class="alt-text-html">${escSnippet(img.evidenceHtml)}</pre>` : "") +
         `${shot(img.image, "alt-text-shot")}</div></div>`;
     }).join("");
     const altActive = at.badCount > 0 ? "failed" : "warnings";
@@ -260,7 +267,7 @@ function checkBodies(check, pageUrl) {
     const kd = d.keyboardFocusData;
     const bad = kd.elements.filter((el) => !el.hasVisibleFocus);
     const focusItem = (el) =>
-      `<div class="focus-item"><div class="focus-item-header"><code class="focus-item-selector">${esc(el.tag)}</code><span class="focus-item-text">${esc((el.text || "").length > 40 ? el.text.slice(0, 37) + "..." : (el.text || ""))}</span></div>${el.issue ? `<p class="focus-item-issue">${esc(el.issue)}</p>` : ""}${el.evidenceHtml ? `<pre class="alt-text-html">${esc(el.evidenceHtml)}</pre>` : ""}${shot(el.image, "focus-shot")}</div>`;
+      `<div class="focus-item"><div class="focus-item-header"><code class="focus-item-selector">${esc(el.tag)}</code><span class="focus-item-text">${esc((el.text || "").length > 40 ? el.text.slice(0, 37) + "..." : (el.text || ""))}</span></div>${el.issue ? `<p class="focus-item-issue">${esc(el.issue)}</p>` : ""}${el.evidenceHtml ? `<pre class="alt-text-html">${escSnippet(el.evidenceHtml)}</pre>` : ""}${shot(el.image, "focus-shot")}</div>`;
     const badHtml = bad.length ? `<div class="focus-issues"><p class="headings-section-label">Elements Without Visible Focus</p>${bad.map(focusItem).join("")}</div>` : "";
     const unreach = Array.isArray(kd.unreachable) ? kd.unreachable : [];
     const unreachHtml = unreach.length ? `<div class="focus-issues"><p class="headings-section-label">Interactive Elements Not Reachable by Keyboard</p>${unreach.map(focusItem).join("")}</div>` : "";
@@ -273,7 +280,10 @@ function checkBodies(check, pageUrl) {
     const rd = d.reflowData;
     let body = "";
     if (rd.reflow) {
-      const overflow = rd.reflow.overflowElements && rd.reflow.overflowElements.length ? `<div class="reflow-overflow"><p class="reflow-overflow-label">Overflowing elements:</p><ul class="reflow-overflow-list">${rd.reflow.overflowElements.map((el) => `<li><code>${esc(el.tag)}</code> overflows by ${esc(el.overflow)}px</li>`).join("")}</ul></div>` : "";
+      // Only list overflowing elements when reflow did NOT pass. On a pass the
+      // amounts are sub-threshold rounding noise (e.g. 2px) and contradict the
+      // "no horizontal scrolling" reason shown alongside them.
+      const overflow = rd.reflow.score !== "pass" && rd.reflow.overflowElements && rd.reflow.overflowElements.length ? `<div class="reflow-overflow"><p class="reflow-overflow-label">Overflowing elements:</p><ul class="reflow-overflow-list">${rd.reflow.overflowElements.map((el) => `<li><code>${esc(el.tag)}</code> overflows by ${esc(el.overflow)}px</li>`).join("")}</ul></div>` : "";
       body += `<div class="reflow-section"><div class="reflow-header"><p class="headings-section-label">Reflow at 320px</p><span class="reflow-score reflow-score--${esc(rd.reflow.score)}">${statusText(rd.reflow.score).replace("Passed", "Pass").replace("Failed", "Fail")}</span></div><p class="reflow-reason">${esc(rd.reflow.reason)}</p>${rd.reflow.hasHorizontalScroll ? `<p class="reflow-warning">Horizontal scrolling detected</p>` : ""}${overflow}</div>`;
     }
     if (rd.zoom) {
@@ -297,7 +307,7 @@ function checkBodies(check, pageUrl) {
       const colors = (el.fgHex || el.bgHex)
         ? `<p class="contrast-item-colors">${sw(el.fgHex)} text ${esc(el.fgHex || "")} on ${sw(el.bgHex)} ${bgLabel}</p>`
         : "";
-      return `<li class="contrast-item"><p class="contrast-item-summary">${esc(el.summary)}</p>${colors}<code class="contrast-item-selector">${esc(el.selector)}</code>${shot(el.image)}<pre class="contrast-item-html">${esc(el.html)}</pre></li>`;
+      return `<li class="contrast-item"><p class="contrast-item-summary">${esc(el.summary)}</p>${colors}<code class="contrast-item-selector">${esc(el.selector)}</code>${shot(el.image)}<pre class="contrast-item-html">${escSnippet(el.html)}</pre></li>`;
     }).join("");
     out.push(`<div class="criterion-body"><div class="contrast-section"><p class="headings-section-label">${header}</p><ul class="contrast-list">${rows}</ul></div></div>`);
   }
