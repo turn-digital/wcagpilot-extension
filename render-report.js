@@ -253,9 +253,15 @@ function checkBodies(check, pageUrl) {
     const fd = d.formsData;
     const scores = scoreBadge("forms", "Labels", fd.labels) + scoreBadge("forms", "Required Fields", fd.requiredFields) + (fd.grouping ? scoreBadge("forms", "Grouping", fd.grouping) : "");
     const fieldsHtml = fd.fields.length ? `<div class="forms-fields"><p class="headings-section-label">Fields (${fd.fields.length})</p><div class="forms-fields-list">${fd.fields.map(formFieldRow).join("")}</div></div>` : "";
+    // AB-15: the "* = required" legend note is only meaningful when the form
+    // actually has required fields. On a form with no required fields the check
+    // is not_applicable, so "Required-field legend: not found" is noise — omit it.
+    const legendNote = fd.requiredFields.score === "not_applicable"
+      ? ""
+      : `<p class="forms-legend-note">Required-field legend (e.g. “* = required”): <strong>${fd.requiredFields.hasRequiredLegend ? "present" : "not found"}</strong></p>`;
     out.push(`<div class="criterion-body">` +
       `<div class="forms-summary"><p class="headings-section-label">Forms: ${esc(fd.formCount)} · Fields: ${esc(fd.fieldCount)}</p><div class="forms-scores">${scores}</div>` +
-      `<p class="forms-legend-note">Required-field legend (e.g. “* = required”): <strong>${fd.requiredFields.hasRequiredLegend ? "present" : "not found"}</strong></p></div>` +
+      `${legendNote}</div>` +
       fieldsHtml +
       formsIssues("Label Issues", fd.labels.findings) +
       formsIssues("Required Field Issues", fd.requiredFields.findings) +

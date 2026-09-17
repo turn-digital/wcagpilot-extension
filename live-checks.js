@@ -108,6 +108,35 @@ function _kbFocus(i) {
   return true;
 }
 
+// AB-21: re-read a focusable's current viewport box. Focusing an off-screen
+// carousel card makes the carousel scroll it into view, so the element MOVES
+// after _kbPrepareBatch measured it — we must re-measure before diffing.
+function _kbRect(i) {
+  const F = window.__a11yF || [];
+  const el = F[i];
+  if (!el) return null;
+  const vw = innerWidth, vh = innerHeight;
+  const r = el.getBoundingClientRect();
+  const ix0 = Math.max(0, r.left), iy0 = Math.max(0, r.top);
+  const ix1 = Math.min(vw, r.right), iy1 = Math.min(vh, r.bottom);
+  const inter = Math.max(0, ix1 - ix0) * Math.max(0, iy1 - iy0);
+  const area = Math.max(1, r.width * r.height);
+  return { rect: { x: r.left, y: r.top, w: r.width, h: r.height }, visFrac: inter / area };
+}
+
+// Blur the active element so a fresh unfocused baseline can be captured.
+function _kbBlur() {
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  return true;
+}
+
+// AB-21: did the element move/resize enough that the batch base shot no longer
+// lines up with it? (8px tolerance absorbs sub-pixel layout jitter.)
+function _rectMoved(a, b) {
+  return Math.abs(a.x - b.x) > 8 || Math.abs(a.y - b.y) > 8 ||
+         Math.abs(a.w - b.w) > 8 || Math.abs(a.h - b.h) > 8;
+}
+
 // Crop the same padded element region out of two viewport bitmaps and count
 // pixels that changed — the focus ring lives in the border band, so a padded
 // crop captures it. Returns true if the region changed enough to be a visible
@@ -185,20 +214,47 @@ async function _runKeyboardPixel(tabId, windowId, onProgress) {
 
     for (const r of batch) {
       await chrome.scripting.executeScript({ target: { tabId }, func: _kbFocus, args: [r.i] });
-      await _sleep(120);
+      // AB-21: wait for any focus-triggered scroll/animation to settle before we
+      // measure or capture. 120ms was catching the carousel mid-scroll, so the
+      // crop showed the previous-position content (the arrow) instead of the card.
+      await _sleep(350);
+
+      let effBaseBmp = baseBmp;   // baseline to diff against (may be re-captured below)
+      let cmpRect = r.rect;       // region to diff (re-read below if the element moved)
+      let extraBmp = null;        // owns a re-captured baseline for cleanup
+      try {
+        const [rm] = await chrome.scripting.executeScript({ target: { tabId }, func: _kbRect, args: [r.i] });
+        const now = rm && rm.result;
+        if (now && now.rect && _rectMoved(r.rect, now.rect)) {
+          // The element moved (carousel scrolled it into view on focus). The batch
+          // base shot + prepared rect are stale — re-establish both at the settled
+          // position so the diff compares like-for-like pixels.
+          if (now.visFrac < 0.5) { continue; } // scrolled mostly off-screen — skip, don't guess
+          cmpRect = now.rect;
+          await chrome.scripting.executeScript({ target: { tabId }, func: _kbBlur });
+          await _sleep(120);
+          let nb;
+          try { nb = await chrome.tabs.captureVisibleTab(windowId, { format: "png" }); } catch (_) {}
+          if (nb) { try { extraBmp = await _loadBitmap(nb); effBaseBmp = extraBmp; } catch (_) {} }
+          await chrome.scripting.executeScript({ target: { tabId }, func: _kbFocus, args: [r.i] });
+          await _sleep(200);
+        }
+      } catch (e) { /* fall back to batch base + prepared rect */ }
+
       let focShot;
       try { focShot = await chrome.tabs.captureVisibleTab(windowId, { format: "png" }); }
       catch (e) {
         if (String((e && e.message) || e).indexOf("MAX_CAPTURE") !== -1) {
           await _sleep(1100);
-          try { focShot = await chrome.tabs.captureVisibleTab(windowId, { format: "png" }); } catch (_) { continue; }
-        } else { continue; }
+          try { focShot = await chrome.tabs.captureVisibleTab(windowId, { format: "png" }); } catch (_) { if (extraBmp && extraBmp.close) extraBmp.close(); continue; }
+        } else { if (extraBmp && extraBmp.close) extraBmp.close(); continue; }
       }
       let focBmp;
-      try { focBmp = await _loadBitmap(focShot); } catch (e) { continue; }
-      try { verdict.set(r.i, _focusRegionChanged(baseBmp, focBmp, r.rect, m.dpr, m.vw, m.vh)); }
+      try { focBmp = await _loadBitmap(focShot); } catch (e) { if (extraBmp && extraBmp.close) extraBmp.close(); continue; }
+      try { verdict.set(r.i, _focusRegionChanged(effBaseBmp, focBmp, cmpRect, m.dpr, m.vw, m.vh)); }
       catch (e) { /* skip */ }
       if (focBmp.close) focBmp.close();
+      if (extraBmp && extraBmp.close) extraBmp.close();
       if (onProgress) onProgress(verdict.size, pool.length);
     }
     if (baseBmp.close) baseBmp.close();
