@@ -803,6 +803,16 @@ a.alt-text-src:hover { text-decoration: underline; }
     color: #8b1a0e;
     margin: 0;
 }
+.focus-verify-note {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #5a4a1a;
+    background: #fff8e6;
+    border-left: 3px solid #e0b83a;
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin: 0 0 10px;
+}
 
 /* Reflow/zoom styles */
 .reflow-section,

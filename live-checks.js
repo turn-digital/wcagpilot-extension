@@ -572,6 +572,13 @@ function _applyLiveChecks(page, kb, rz, formsLive) {
     // elements were tested or reached (no "40 of 63").
     const unreachable = Array.isArray(kb.unreachable) ? kb.unreachable : [];
     const hasUnreachable = unreachable.length > 0;
+    // If the Moving/Blinking check (SC 2.2.2) already flagged auto-moving content
+    // (a carousel/slider, autoplay, animated GIF…), the keyboard disclaimer can
+    // say so directly: such content changes what is on screen and in the tab
+    // order moment to moment, so an unreachable finding is especially likely to
+    // be a state artifact rather than a real 2.1.1 failure.
+    const movingCheck = _findCheck(page, "moving", 10);
+    const hasMovingContent = !!(movingCheck && movingCheck.status && movingCheck.status !== "pass" && movingCheck.status !== "na");
     const ringPart = reliable
       ? (kb.withoutVisibleFocus === 0
           ? (lowCoverage && !hasUnreachable
@@ -592,6 +599,7 @@ function _applyLiveChecks(page, kb, rz, formsLive) {
       summary,
       elements: kb.elements,
       unreachable,
+      hasMovingContent,
     };
     // Real keyboard Tab is reliable, so a missing ring is a genuine WCAG 2.4.7
     // fail (one is a warning to tolerate the odd measurement glitch). The
@@ -716,6 +724,15 @@ function _kbLocate(idx) {
 // whose same-name group is already keyboard-operable (a member was reached, or
 // one is checked). (Roving-tabindex widgets — tabs/toolbars/menus — are already
 // excluded upstream because their inactive items carry tabindex="-1".)
+// ALSO drop carousel/slider slide contents: a non-active slide's controls are
+// intentionally out of the linear Tab order and become reachable only when the
+// carousel is advanced (via its own keyboard controls), so they don't fail
+// 2.1.1. Whether Tab happens to reach one depends on which slide is active at
+// capture time, which makes the finding both wrong AND non-deterministic (it
+// flips run-to-run). Detected by carousel semantics/known-library classes, or
+// geometrically by the element being clipped outside an overflow ancestor (the
+// slide sits off the visible window of a horizontal track). We would rather
+// miss one than false-alarm — same stance as the radio/dup-nav drops.
 function _kbClassifyUnreachable(missIdx, reachedIdx) {
   const F = window.__a11yF || [];
   const reached = new Set((reachedIdx || []).map(String));
@@ -726,11 +743,40 @@ function _kbClassifyUnreachable(missIdx, reachedIdx) {
       okRadioNames.add(el.name);
     }
   }
+  const CAROUSEL_CLASS = /(?:^|[-_\s])(carousel|slider|swiper|embla|slick|keen-slider|glide|splide|flickity)(?:$|[-_\s])/i;
+  function inCarouselOrClipped(el) {
+    let n = el, depth = 0;
+    while (n && n.nodeType === 1 && depth < 25) {
+      const ard = (n.getAttribute && n.getAttribute("aria-roledescription")) || "";
+      if (/carousel|slider|slideshow/i.test(ard)) return true;
+      const cls = typeof n.className === "string" ? n.className : (n.getAttribute && n.getAttribute("class")) || "";
+      if (CAROUSEL_CLASS.test(cls)) return true;
+      let cs; try { cs = getComputedStyle(n); } catch (e) {}
+      if (cs) {
+        const clips = /(hidden|auto|scroll|clip)/.test(cs.overflowX + " " + cs.overflowY + " " + cs.overflow);
+        if (clips) {
+          let er, nr;
+          try { er = el.getBoundingClientRect(); nr = n.getBoundingClientRect(); } catch (e) {}
+          if (er && nr) {
+            // slide sits OUTSIDE the clip container's box (translated off the track)
+            const outsideX = er.right <= nr.left + 1 || er.left >= nr.right - 1;
+            const outsideY = er.bottom <= nr.top + 1 || er.top >= nr.bottom - 1;
+            // or the container is a horizontal scroller and the element is beyond its window
+            const isHScroller = n.scrollWidth - n.clientWidth > 4;
+            if (outsideX || outsideY || (isHScroller && (er.left < nr.left - 1 || er.right > nr.right + 1))) return true;
+          }
+        }
+      }
+      n = n.parentElement; depth++;
+    }
+    return false;
+  }
   const keep = [];
   for (const idx of (missIdx || [])) {
     const el = F[idx];
     if (!el) continue;
     if (el.tagName === "INPUT" && el.type === "radio" && el.name && okRadioNames.has(el.name)) continue;
+    if (inCarouselOrClipped(el)) continue;
     keep.push(idx);
   }
   return keep;

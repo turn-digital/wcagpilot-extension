@@ -160,8 +160,21 @@ async function _sampleBgFromCrop(dataUrl, fg) {
       bg.push([r, g, b]);
     }
     if (bg.length < 12) return null;
-    bg.sort((a, b2) => _lumRgb(a[0], a[1], a[2]) - _lumRgb(b2[0], b2[1], b2[2]));
-    return bg[Math.floor(bg.length / 2)];
+    // Reproducibility (retest, new observation): the same element sampled
+    // #ffffff one run and #fffff8 the next. Root cause: picking a SINGLE
+    // luminance-median pixel from a lossy JPEG crop — compression noise changes
+    // which pixel wins between captures. Use the PER-CHANNEL median over all
+    // background pixels instead (a stable central estimator), then snap
+    // near-extreme channels to 0/255, since that band is dominated by JPEG
+    // ringing and the true value of a near-white/near-black background is almost
+    // certainly the extreme. (Full elimination would require sampling lossless
+    // PNG pixels rather than the JPEG crop.)
+    const med = (idx) => {
+      const xs = bg.map((p) => p[idx]).sort((a, b2) => a - b2);
+      return xs[Math.floor(xs.length / 2)];
+    };
+    const snap = (v) => (v >= 248 ? 255 : v <= 7 ? 0 : v);
+    return [snap(med(0)), snap(med(1)), snap(med(2))];
   } catch (e) { return null; }
 }
 
