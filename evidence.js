@@ -85,6 +85,9 @@ function _scanContrastInPage() {
     var tag = el.tagName.toLowerCase();
     if (tag === "script" || tag === "style" || tag === "noscript" || tag === "svg") continue;
     if (el.disabled) continue;
+    // aria-hidden text is removed from the a11y tree, so WCAG 1.4.3 contrast
+    // doesn't apply (e.g. decorative breadcrumb separators). Skip the whole subtree.
+    if (el.closest && el.closest('[aria-hidden="true"]')) continue;
     var hasText = false, txt = "";
     for (var c = 0; c < el.childNodes.length; c++) {
       var n = el.childNodes[c];

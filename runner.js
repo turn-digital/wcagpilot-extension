@@ -86,6 +86,11 @@ async function runAudit() {
       }
     });
 
+    // buildEvidenceAudit froze audit.complianceStatus BEFORE the live checks
+    // (keyboard/contrast/reflow) ran, so a live failure never flipped the top
+    // badge. Re-derive it from the now-updated page rollup.
+    audit.complianceStatus = audit.pages[0] && audit.pages[0].passed ? "compliant" : "not_compliant";
+
     setRunning("Building report…");
     const filename = await downloadReportHtml(audit);
     setDone(filename);
