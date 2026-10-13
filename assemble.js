@@ -15,15 +15,39 @@
 const assemblePageAuditLocal = (function () {
   const BASE = () => CONFIG.WORKER_URL.replace(/\/+$/, "");
 
+  // One id per audit run. Every audit fans out to the 6 workers, so the gateway
+  // counts a "test" as a distinct run id (not 6 separate worker hits). Set at the
+  // start of each assemble() call.
+  let currentRunId = "";
+
   async function post(path, body) {
     const res = await fetch(`${BASE()}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // Personal access key — the gateway validates it against the server-side
+        // allowlist and records usage. See config.js (CLIENT_TOKEN).
+        Authorization: `Bearer ${CONFIG.CLIENT_TOKEN}`,
+        "X-Audit-Run": currentRunId,
+      },
       body: JSON.stringify(body),
     });
+    if (res.status === 401 || res.status === 403) {
+      const e = new Error("Access key rejected — it may have been disabled. Ask for a new key.");
+      e.isAuth = true;
+      throw e;
+    }
     if (!res.ok) throw new Error(`${path} failed (${res.status})`);
     return res.json();
   }
+
+  // Per-worker calls fail soft (an empty result) so one flaky worker doesn't
+  // sink the whole audit — EXCEPT an access-key rejection, which must stop the
+  // run with a clear message instead of a silently empty report.
+  const softFail = (fallback) => (e) => {
+    if (e && e.isAuth) throw e;
+    return fallback;
+  };
 
   async function callHeadings(url, html) {
     const r = await post("/w/headings", { url, html });
@@ -127,19 +151,28 @@ const assemblePageAuditLocal = (function () {
     const { url, html } = input;
     const pageTitle = input.title || "";
 
+    // No access key → don't fire 6 doomed requests; stop with a clear setup
+    // message the tester can act on (paste the key into config.js).
+    if (!CONFIG.CLIENT_TOKEN) {
+      throw new Error("No access key set — open config.js and paste the key you were given into CLIENT_TOKEN, then run the audit again.");
+    }
+
+    // Tag every call in this audit with one run id (for per-tester test counts).
+    currentRunId = (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : `run-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+
     // Fan out to the 6 content workers (fail soft to empty). Keyboard/reflow are
     // done live by the extension, so they are not called here.
     const [headings, titlesResult, altTextsResult, skipLinksResult, mediaResult, formsResult] =
       await Promise.all([
-        callHeadings(url, html).catch(() => ({
+        callHeadings(url, html).catch(softFail({
           passed: false, hasWarnings: false, description: "Failed to analyze headings",
           checks: [], currentOutline: [], suggestedOutline: [],
         })),
-        callTitles(url, html, pageTitle).catch(() => ({ results: [] })),
-        callAltTexts(url, html).catch(() => ({ results: [] })),
-        callSkipLinks(url, html).catch(() => ({ results: [] })),
-        callMedia(url, html).catch(() => ({ pages: [] })),
-        callForms(url, html).catch(() => ({ pages: [] })),
+        callTitles(url, html, pageTitle).catch(softFail({ results: [] })),
+        callAltTexts(url, html).catch(softFail({ results: [] })),
+        callSkipLinks(url, html).catch(softFail({ results: [] })),
+        callMedia(url, html).catch(softFail({ pages: [] })),
+        callForms(url, html).catch(softFail({ pages: [] })),
       ]);
 
     const titleResult = titlesResult.results.find((r) => r.url === url) || titlesResult.results[0];
